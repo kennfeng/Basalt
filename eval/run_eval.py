@@ -23,10 +23,7 @@ def resolve_safe_path(path: str) -> Path:
 
 
 def is_under_path(path: Path, base: Path) -> bool:
-    try:
-        return path.is_relative_to(base)
-    except AttributeError:
-        return base == path or base in path.parents
+    return path.is_relative_to(base)
 
 
 def validate_dataset_path(file_path: str, base_dir: Path) -> Path:
@@ -217,6 +214,7 @@ def main() -> None:
         db_path=str(args.db_path),
         texts=[doc["text"] for doc in corpus],
         ids=[doc["id"] for doc in corpus],
+        ingestor=ingestor,
     )
 
     print("Loading cross-encoder model for re-ranking...")

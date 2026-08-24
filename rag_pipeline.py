@@ -96,6 +96,7 @@ class LangChainRAG:
         ensure_seeded(
             db_path=db_path,
             texts=sample_docs or [text for _, text in SAMPLE_DOCUMENTS],
+            ingestor=ingestor,
         )
 
         ranker = AtlasReRanker(model_name=model_name)

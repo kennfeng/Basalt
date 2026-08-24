@@ -23,11 +23,8 @@ def _chunk_text(
     start = 0
     while start < len(words):
         end = start + chunk_size
-        chunk = " ".join(words[start:end])
-        chunks.append(chunk)
+        chunks.append(" ".join(words[start:end]))
         start += chunk_size - chunk_overlap
-        if start >= len(words):
-            break
     return chunks if chunks else [text]
 
 
@@ -120,8 +117,10 @@ def ensure_seeded(
     db_path: str,
     texts: list[str],
     ids: list[str] | None = None,
+    ingestor: AtlasIngestor | None = None,
 ) -> bool:
-    ingestor = AtlasIngestor(db_path=db_path)
+    if ingestor is None:
+        ingestor = AtlasIngestor(db_path=db_path)
     if ingestor.collection.count() == 0:
         ingestor.add_documents(text_list=texts, ids=ids)
         return True
