@@ -16,7 +16,7 @@ class AtlasReRanker:
         if model is not None:
             self.model: Any = model
             self.device: str = getattr(model, "device", "cpu")
-            self.batch_size: int = getattr(model, "batch_size", batch_size)
+            self.batch_size: int = batch_size
             return
 
         print(f"Loading PyTorch Re-ranker model: {model_name}...")
