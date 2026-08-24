@@ -23,11 +23,11 @@ def create_llm(
     if provider == "openai":
         try:
             from langchain_openai import ChatOpenAI
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
                 "langchain-openai is required for the 'openai' provider. "
                 "Install it with: pip install langchain-openai"
-            )
+            ) from exc
         return ChatOpenAI(model=model_name, **kwargs)
 
     raise ValueError(f"Unknown provider: {provider!r}. Supported: 'ollama', 'openai'.")
