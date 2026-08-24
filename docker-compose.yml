@@ -28,13 +28,13 @@ services:
     ports:
       - "8000:8000"
     environment:
-      ATLAS_DB_PATH: /data/atlas_db
-      ATLAS_PROVIDER: ollama
-      ATLAS_LLM_MODEL: llama3.2:1b
-      ATLAS_RERANKER_MODEL: BAAI/bge-reranker-base
-      ATLAS_OLLAMA_BASE_URL: http://ollama:11434
-      ATLAS_N_RESULTS: 10
-      ATLAS_TOP_N: 3
+      ATLAS_DB_PATH: ${ATLAS_DB_PATH:-/data/atlas_db}
+      ATLAS_PROVIDER: ${ATLAS_PROVIDER:-ollama}
+      ATLAS_LLM_MODEL: ${ATLAS_LLM_MODEL:-llama3.2:1b}
+      ATLAS_RERANKER_MODEL: ${ATLAS_RERANKER_MODEL:-BAAI/bge-reranker-base}
+      ATLAS_OLLAMA_BASE_URL: ${ATLAS_OLLAMA_BASE_URL:-http://ollama:11434}
+      ATLAS_N_RESULTS: ${ATLAS_N_RESULTS:-10}
+      ATLAS_TOP_N: ${ATLAS_TOP_N:-3}
       HF_HOME: /data/hf-cache
     volumes:
       - atlas_db:/data
