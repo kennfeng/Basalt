@@ -62,8 +62,15 @@ def main() -> None:
         base_url=args.base_url,
     )
 
+    judge_kwargs: dict[str, Any] = {}
+    if args.base_url is not None:
+        judge_kwargs["base_url"] = args.base_url
     judge = LLMJudge(
-        create_llm(provider=args.judge_provider, model_name=args.judge_model)
+        create_llm(
+            provider=args.judge_provider,
+            model_name=args.judge_model,
+            **judge_kwargs,
+        )
     )
 
     config_dict: dict[str, Any] = {
