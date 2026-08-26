@@ -1,18 +1,26 @@
 services:
   ollama:
     image: ollama/ollama:0.6.2
-    command: /bin/sh -c 'ollama list | grep -q "$${ATLAS_LLM_MODEL:-llama3.2:1b}" || ollama pull "$${ATLAS_LLM_MODEL:-llama3.2:1b}"; exec ollama serve'
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        server_pid=$$!
+        model=$${ATLAS_LLM_MODEL:-llama3.2:1b}
+        until ollama list >/dev/null 2>&1; do sleep 1; done
+        ollama show "$$model" >/dev/null 2>&1 || ollama pull "$$model"
+        wait "$$server_pid"
     environment:
-      ATLAS_LLM_MODEL: llama3.2:1b
+      ATLAS_LLM_MODEL: ${ATLAS_LLM_MODEL:-llama3.2:1b}
       OLLAMA_HOST: 0.0.0.0
       OLLAMA_KEEP_ALIVE: 24h
     volumes:
       - ollama_models:/root/.ollama
     healthcheck:
-      test: ["CMD", "ollama", "list"]
+      test: ["CMD-SHELL", "ollama show \"$${ATLAS_LLM_MODEL:-llama3.2:1b}\" > /dev/null 2>&1"]
       interval: 30s
       retries: 5
-      start_period: 180s
+      start_period: 300s
     restart: unless-stopped
     networks: [internal]
     # deploy:
@@ -48,6 +56,13 @@ services:
       start_period: 300s
     restart: unless-stopped
     networks: [internal, edge]
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
 
 networks:
   internal: {}
