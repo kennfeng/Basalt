@@ -38,11 +38,16 @@ class AtlasReRanker:
         )
         return scores, ranked_indices
 
+    def _validate_top_n(self, top_n: int) -> None:
+        if top_n < 0:
+            raise ValueError(f"top_n must be >= 0, got {top_n}")
+
     def rerank(
         self, query: str, documents: Sequence[str], top_n: int = 3
     ) -> list[dict[str, Any]]:
         if not documents:
             return []
+        self._validate_top_n(top_n)
 
         pairs = [[query, doc] for doc in documents]
         scores, ranked_indices = self._score_pairs(pairs)
@@ -57,6 +62,7 @@ class AtlasReRanker:
     ) -> list[dict[str, Any]]:
         if not candidates:
             return []
+        self._validate_top_n(top_n)
 
         pairs = [[query, doc] for _, doc in candidates]
         scores, ranked_indices = self._score_pairs(pairs)

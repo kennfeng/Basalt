@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
 from reranker import AtlasReRanker
 
@@ -46,6 +47,23 @@ def test_rerank_returns_empty_list_for_no_documents():
     reranker = make_reranker()
     results = reranker.rerank("query", [], top_n=3)
     assert results == []
+
+
+def test_rerank_rejects_negative_top_n():
+    reranker = make_reranker()
+    with pytest.raises(ValueError, match="top_n must be >= 0"):
+        reranker.rerank("query", ["a", "b"], top_n=-1)
+
+
+def test_rerank_with_ids_rejects_negative_top_n():
+    reranker = make_reranker()
+    with pytest.raises(ValueError, match="top_n must be >= 0"):
+        reranker.rerank_with_ids("query", [("id_1", "a")], top_n=-1)
+
+
+def test_rerank_accepts_zero_top_n():
+    reranker = make_reranker()
+    assert reranker.rerank("query", ["a", "b"], top_n=0) == []
 
 
 def test_rerank_with_ids_returns_empty_list_for_no_candidates():
