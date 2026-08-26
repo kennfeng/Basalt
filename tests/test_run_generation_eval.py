@@ -205,6 +205,26 @@ def test_cli_default_output_path(monkeypatch):
             default_output.unlink()
 
 
+def test_cli_records_reranker_model_from_env(tmp_path, monkeypatch):
+    patch_components(monkeypatch)
+    out = tmp_path / "out.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_generation_eval.py",
+            "--dataset",
+            "eval/eval_dataset.json",
+            "--output",
+            str(out),
+        ],
+    )
+    with patch.dict(os.environ, {"ATLAS_RERANKER_MODEL": "BAAI/bge-reranker-large"}):
+        run_generation_eval.main()
+    data = json.loads(out.read_text())
+    assert data["config"]["reranker_model"] == "BAAI/bge-reranker-large"
+
+
 def test_validate_corpus_db_passes_when_all_ids_present(monkeypatch):
     mock_ingestor = MagicMock()
     mock_ingestor.collection.get.return_value = {"ids": ["doc_0", "doc_1"]}

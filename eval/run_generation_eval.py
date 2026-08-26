@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -77,7 +78,9 @@ def main() -> None:
         "num_queries": len(data["queries"]),
         "provider": args.provider,
         "llm_model": args.llm_model,
-        "reranker_model": "BAAI/bge-reranker-base",
+        "reranker_model": os.environ.get(
+            "ATLAS_RERANKER_MODEL", "BAAI/bge-reranker-base"
+        ),
         "n_results": args.n_results,
         "top_n": args.top_n,
         "judge_provider": args.judge_provider,
