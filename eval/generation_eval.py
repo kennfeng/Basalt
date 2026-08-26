@@ -25,15 +25,27 @@ def _extract_json_block(text: str) -> dict | None:
     if start == -1:
         return None
     depth = 0
+    in_string = False
+    escaped = False
     for i in range(start, len(text)):
-        if text[i] == "{":
+        char = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
             depth += 1
-        elif text[i] == "}":
+        elif char == "}":
             depth -= 1
             if depth == 0:
-                block = text[start : i + 1]
                 try:
-                    return json.loads(block)
+                    return json.loads(text[start : i + 1])
                 except json.JSONDecodeError:
                     return None
     return None

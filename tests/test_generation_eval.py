@@ -22,6 +22,34 @@ def test_parse_judge_response_garbage_returns_none():
     assert generation_eval.parse_judge_response("I don't know") is None
 
 
+def test_parse_judge_response_prose_wrapped_json_with_brace_in_rationale():
+    text = 'Result: {"faithfulness": 0.9, "relevance": 0.8, "rationale": "a } b {c}"}'
+    parsed = generation_eval.parse_judge_response(text)
+    assert parsed == {
+        "faithfulness": 0.9,
+        "relevance": 0.8,
+        "rationale": "a } b {c}",
+    }
+
+
+def test_parse_judge_response_prose_wrapped_json_with_escaped_quote_in_rationale():
+    text = (
+        'Note: {"faithfulness": 1.0, "relevance": 1.0, '
+        '"rationale": "quotes \\" inside \\\\ ok"}'
+    )
+    parsed = generation_eval.parse_judge_response(text)
+    assert parsed == {
+        "faithfulness": 1.0,
+        "relevance": 1.0,
+        "rationale": 'quotes " inside \\ ok',
+    }
+
+
+def test_parse_judge_response_unterminated_block_returns_none():
+    text = 'Result: {"faithfulness": 0.9, "relevance": 0.8, "rationale'
+    assert generation_eval.parse_judge_response(text) is None
+
+
 def test_parse_judge_response_out_of_range_score_returns_none():
     text = '{"faithfulness": 1.5, "relevance": 0.9, "rationale": "ok"}'
     assert generation_eval.parse_judge_response(text) is None
