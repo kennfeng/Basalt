@@ -63,7 +63,7 @@ def create_app(rag_factory: Any = None) -> FastAPI:
                 ingestor = BasaltIngestor(db_path=db_path)
                 raw = ingestor.collection.count()
                 db_count = int(raw) if isinstance(raw, int) else 0
-            except Exception:
+            except Exception:  # noqa: BLE001
                 db_count = 0
         status = "ok" if db_ready and ollama_reachable else "degraded"
         return JSONResponse(
