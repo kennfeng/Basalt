@@ -5,14 +5,24 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable
 
-from ingest import AtlasIngestor, ensure_seeded
+from ingest import BasaltIngestor, ensure_seeded
 from langchain_adapters import (
     ChromaRetrieverAdapter,
     CrossEncoderRerankerAdapter,
     create_llm,
 )
-from reranker import AtlasReRanker
+from reranker import BasaltReRanker
 from sample_data import SAMPLE_DOCUMENTS
+
+try:
+    from hybrid import BM25Index, HybridRetriever, load_or_build_bm25
+
+    _HYBRID_AVAILABLE = True
+except ImportError:
+    BM25Index = None  # type: ignore
+    HybridRetriever = None  # type: ignore
+    load_or_build_bm25 = None  # type: ignore
+    _HYBRID_AVAILABLE = False
 
 SYSTEM_PROMPT = (
     "You are a helpful AI assistant. Answer the user's question based only on the "
@@ -31,10 +41,12 @@ class LangChainRAG:
         retriever: ChromaRetrieverAdapter,
         reranker: CrossEncoderRerankerAdapter,
         llm: Runnable,
+        hybrid_retriever: Any | None = None,
     ) -> None:
         self.retriever = retriever
         self.reranker = reranker
         self.llm = llm
+        self.hybrid_retriever = hybrid_retriever
         self.prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", SYSTEM_PROMPT),
@@ -66,40 +78,103 @@ class LangChainRAG:
         db_path = (
             db_path
             if db_path is not None
-            else os.environ.get("ATLAS_DB_PATH", "./atlas_db")
+            else os.environ.get("BASALT_DB_PATH", "./basalt_db")
         )
         model_name = (
             model_name
             if model_name is not None
-            else os.environ.get("ATLAS_RERANKER_MODEL", "BAAI/bge-reranker-base")
+            else os.environ.get("BASALT_RERANKER_MODEL", "BAAI/bge-reranker-base")
         )
         llm_model_name = (
             llm_model_name
             if llm_model_name is not None
-            else os.environ.get("ATLAS_LLM_MODEL", "llama3.2:1b")
+            else os.environ.get("BASALT_LLM_MODEL", "llama3.2:1b")
         )
         provider = (
             provider
             if provider is not None
-            else os.environ.get("ATLAS_PROVIDER", "ollama")
+            else os.environ.get("BASALT_PROVIDER", "ollama")
         )
         n_results = (
             n_results
             if n_results is not None
-            else int(os.environ.get("ATLAS_N_RESULTS", "10"))
+            else int(os.environ.get("BASALT_N_RESULTS", "10"))
         )
-        top_n = top_n if top_n is not None else int(os.environ.get("ATLAS_TOP_N", "3"))
+        top_n = top_n if top_n is not None else int(os.environ.get("BASALT_TOP_N", "3"))
         if base_url is None:
-            base_url = os.environ.get("ATLAS_OLLAMA_BASE_URL")
+            base_url = os.environ.get("BASALT_BASE_URL")
 
-        ingestor = AtlasIngestor(db_path=db_path)
+        ingestor = BasaltIngestor(db_path=db_path)
         ensure_seeded(
             db_path=db_path,
             texts=sample_docs or [text for _, text in SAMPLE_DOCUMENTS],
             ingestor=ingestor,
         )
 
-        ranker = AtlasReRanker(model_name=model_name)
+        hybrid_enabled = os.getenv("BASALT_HYBRID", "true").lower() not in (
+            "false",
+            "0",
+            "no",
+            "off",
+        )
+        hybrid_retriever: Any | None = None
+        if hybrid_enabled and _HYBRID_AVAILABLE and HybridRetriever is not None:
+            try:
+                from pathlib import Path
+
+                dense_n = int(os.getenv("BASALT_HYBRID_DENSE_N", "50"))
+                sparse_n = int(os.getenv("BASALT_HYBRID_SPARSE_N", "50"))
+                rrf_k = int(os.getenv("BASALT_HYBRID_RRF_K", "60"))
+                hybrid_top_n = int(os.getenv("BASALT_HYBRID_TOP_N", "20"))
+                bm25_path = Path(db_path) / "bm25.pkl"
+                sample_jsonl = Path("data/sample.jsonl")
+                bm25_index = None
+                if load_or_build_bm25 is not None:
+                    if bm25_path.exists():
+                        try:
+                            bm25_index = load_or_build_bm25(pickle_path=bm25_path)
+                        except Exception:  # noqa: BLE001
+                            bm25_index = None
+                    if bm25_index is None and sample_jsonl.exists():
+                        bm25_index = load_or_build_bm25(
+                            jsonl_path=sample_jsonl, pickle_path=bm25_path
+                        )
+                    if bm25_index is None:
+                        try:
+                            corpus_ids: list[str] = []
+                            corpus_texts: list[str] = []
+                            try:
+                                all_docs = ingestor.collection.get(
+                                    include=["documents"]
+                                )
+                                ids = all_docs.get("ids", [])
+                                docs = all_docs.get("documents", [])
+                                if ids and docs:
+                                    corpus_ids = list(ids)
+                                    corpus_texts = list(docs)
+                            except Exception:  # noqa: BLE001, S110
+                                pass
+                            if corpus_ids and corpus_texts:
+                                bm25_index = load_or_build_bm25(
+                                    corpus_ids=corpus_ids,
+                                    corpus_texts=corpus_texts,
+                                    pickle_path=bm25_path,
+                                )
+                        except Exception:  # noqa: BLE001
+                            bm25_index = None
+                if bm25_index is not None:
+                    hybrid_retriever = HybridRetriever(
+                        ingestor=ingestor,
+                        bm25_index=bm25_index,
+                        dense_n=dense_n,
+                        sparse_n=sparse_n,
+                        rrf_k=rrf_k,
+                        top_n=hybrid_top_n,
+                    )
+            except Exception:  # noqa: BLE001
+                hybrid_retriever = None
+
+        ranker = BasaltReRanker(model_name=model_name)
         retriever = ChromaRetrieverAdapter(ingestor, n_results=n_results)
         reranker = CrossEncoderRerankerAdapter(ranker, top_n=top_n)
 
@@ -116,10 +191,17 @@ class LangChainRAG:
             **({"base_url": base_url} if base_url is not None else {}),
         )
 
-        return cls(retriever, reranker, llm)
+        return cls(retriever, reranker, llm, hybrid_retriever=hybrid_retriever)
 
     def _prepare(self, query: str) -> dict[str, Any]:
-        candidates = self.retriever.get_relevant_documents_with_ids(query)
+        candidates: list[tuple[str, str]] = []
+        if self.hybrid_retriever is not None:
+            try:
+                candidates = self.hybrid_retriever.retrieve(query)
+            except Exception:  # noqa: BLE001
+                candidates = self.retriever.get_relevant_documents_with_ids(query)
+        else:
+            candidates = self.retriever.get_relevant_documents_with_ids(query)
         if not candidates:
             return {"context": "", "source_documents": []}
 

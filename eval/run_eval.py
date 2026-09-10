@@ -13,8 +13,8 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from eval.analyzer import EvalReporter
-from ingest import AtlasIngestor, ensure_seeded
-from reranker import AtlasReRanker
+from ingest import BasaltIngestor, ensure_seeded
+from reranker import BasaltReRanker
 
 
 def resolve_safe_path(path: str) -> Path:
@@ -77,7 +77,7 @@ def reciprocal_rank(retrieved_ids: list[str], relevant_ids: list[str]) -> float:
 
 
 def run_retrieval_only(
-    ingestor: AtlasIngestor, query: str, n_results: int
+    ingestor: BasaltIngestor, query: str, n_results: int
 ) -> tuple[list[str], float]:
     start = time.perf_counter()
     candidates = ingestor.search_with_ids(query, n_results=n_results)
@@ -89,8 +89,8 @@ def run_retrieval_only(
 
 
 def run_retrieval_plus_rerank(
-    ingestor: AtlasIngestor,
-    ranker: AtlasReRanker,
+    ingestor: BasaltIngestor,
+    ranker: BasaltReRanker,
     query: str,
     n_results: int,
     top_n: int,
@@ -207,7 +207,7 @@ def main() -> None:
         shutil.rmtree(args.db_path)
 
     print("Initializing Ingestor and ingesting corpus...")
-    ingestor = AtlasIngestor(db_path=args.db_path)
+    ingestor = BasaltIngestor(db_path=args.db_path)
     if db_exists and args.keep_db:
         print(f"Clearing existing collection at {args.db_path}...")
     ensure_seeded(
@@ -218,7 +218,7 @@ def main() -> None:
     )
 
     print("Loading cross-encoder model for re-ranking...")
-    ranker = AtlasReRanker()
+    ranker = BasaltReRanker()
 
     if queries:
         print("Warming up retrieval and re-ranking...")

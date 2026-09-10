@@ -1,3 +1,4 @@
+import os
 from typing import Any
 
 import chromadb
@@ -28,21 +29,58 @@ def _chunk_text(
     return chunks if chunks else [text]
 
 
-class AtlasIngestor:
+def _parse_env_int(name: str, default: int | None = None) -> int | None:
+    val = os.getenv(name)
+    if val is None or val == "":
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        return default
+
+
+def _create_client(db_path: str) -> Any:
+    host = os.getenv("BASALT_CHROMA_HOST")
+    if host:
+        port = _parse_env_int("BASALT_CHROMA_PORT", 8000) or 8000
+        return chromadb.HttpClient(host=host, port=port)
+    return chromadb.PersistentClient(path=db_path)
+
+
+def _hnsw_metadata() -> dict[str, Any]:
+    metadata: dict[str, Any] = {"hnsw:space": "cosine"}
+    m = _parse_env_int("BASALT_HNSW_M")
+    if m is not None:
+        metadata["hnsw:M"] = m
+    ef_c = _parse_env_int("BASALT_HNSW_CONSTRUCTION_EF")
+    if ef_c is not None:
+        metadata["hnsw:construction_ef"] = ef_c
+    ef_s = _parse_env_int("BASALT_HNSW_SEARCH_EF")
+    if ef_s is not None:
+        metadata["hnsw:search_ef"] = ef_s
+    return metadata
+
+
+class BasaltIngestor:
     def __init__(
         self,
-        db_path: str = "./atlas_db",
+        db_path: str = "./basalt_db",
         embedding_model_name: str = "all-MiniLM-L6-v2",
         collection_name: str = "documents",
     ) -> None:
-        self.client = chromadb.PersistentClient(path=db_path)
+        self.db_path = db_path
+        self.embedding_model_name = embedding_model_name
+        self.collection_name = collection_name
+        self.embed_device = os.getenv("BASALT_EMBED_DEVICE", "cpu")
+        self.embed_batch_size = _parse_env_int("BASALT_EMBED_BATCH_SIZE", 32) or 32
+        self.client = _create_client(db_path)
         self.emb_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=embedding_model_name
         )
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
             embedding_function=self.emb_fn,
-            metadata={"hnsw:space": "cosine"},
+            metadata=_hnsw_metadata(),
         )
 
     def add_documents(
@@ -52,6 +90,7 @@ class AtlasIngestor:
         ids: list[str] | None = None,
         chunk_size: int | None = None,
         chunk_overlap: int = 64,
+        batch_size: int | None = None,
     ) -> None:
         if chunk_size is not None and chunk_size > 0:
             if chunk_overlap >= chunk_size:
@@ -84,7 +123,22 @@ class AtlasIngestor:
         if ids is None:
             ids = [f"id_{i}" for i in range(len(text_list))]
 
-        self.collection.add(documents=text_list, metadatas=metadata_list, ids=ids)
+        effective_batch = batch_size
+        if effective_batch is None:
+            effective_batch = _parse_env_int("BASALT_BATCH_SIZE", 512) or 512
+        if effective_batch < 1:
+            raise ValueError(f"batch_size must be >= 1, got {effective_batch}")
+
+        for start in range(0, len(text_list), effective_batch):
+            end = start + effective_batch
+            batch_docs = text_list[start:end]
+            batch_ids = ids[start:end]
+            batch_metas = (
+                metadata_list[start:end] if metadata_list is not None else None
+            )
+            self.collection.upsert(
+                documents=batch_docs, metadatas=batch_metas, ids=batch_ids
+            )
 
     def search(
         self,
@@ -117,10 +171,13 @@ def ensure_seeded(
     db_path: str,
     texts: list[str],
     ids: list[str] | None = None,
-    ingestor: AtlasIngestor | None = None,
+    ingestor: BasaltIngestor | None = None,
 ) -> bool:
+    auto_seed = os.getenv("BASALT_AUTO_SEED", "true").lower()
+    if auto_seed in ("false", "0", "no", "off"):
+        return False
     if ingestor is None:
-        ingestor = AtlasIngestor(db_path=db_path)
+        ingestor = BasaltIngestor(db_path=db_path)
     if ingestor.collection.count() == 0:
         ingestor.add_documents(text_list=texts, ids=ids)
         return True
@@ -134,9 +191,9 @@ def ensure_seeded(
 
 
 if __name__ == "__main__":
-    ensure_seeded(db_path="./atlas_db", texts=[text for _, text in SAMPLE_DOCUMENTS])
+    ensure_seeded(db_path="./basalt_db", texts=[text for _, text in SAMPLE_DOCUMENTS])
 
-    ingestor = AtlasIngestor()
+    ingestor = BasaltIngestor()
 
     query = "What is RAG and why use a vector DB?"
     candidates = ingestor.search(query, n_results=3)

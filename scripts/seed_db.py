@@ -5,7 +5,7 @@ from sample_data import SAMPLE_DOCUMENTS
 
 
 def main() -> None:
-    db_path = os.environ.get("ATLAS_DB_PATH", "./atlas_db")
+    db_path = os.environ.get("BASALT_DB_PATH", "./basalt_db")
     seeded = ensure_seeded(
         db_path=db_path, texts=[text for _, text in SAMPLE_DOCUMENTS]
     )

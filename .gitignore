@@ -1,6 +1,7 @@
-# Atlas Project Git Ignore
+# Basalt Project Git Ignore
 
 # Local Database
+basalt_db/
 atlas_db/
 
 # Eval Database
@@ -21,6 +22,11 @@ venv/
 .pytest_cache/
 .ruff_cache/
 
+# Python package artifacts
+*.egg-info/
+*.egg
+uv.lock
+
 # Python temporary files
 __pycache__/
 *.py[cod]
@@ -31,6 +37,9 @@ __pycache__/
 
 # Working design document
 DESIGN.md
+
+# Working doc
+AI.md
 
 # Opencode
 opencode.json

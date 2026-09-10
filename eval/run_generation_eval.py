@@ -11,14 +11,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from eval import run_eval
 from eval.generation_eval import LLMJudge, run_generation_eval
-from ingest import AtlasIngestor
+from ingest import BasaltIngestor
 from langchain_adapters import create_llm
 from rag_pipeline import LangChainRAG
 
 
 def validate_corpus_db(db_path: str, data: dict[str, Any]) -> None:
     expected_ids = [doc["id"] for doc in data["corpus"]]
-    ingestor = AtlasIngestor(db_path=db_path)
+    ingestor = BasaltIngestor(db_path=db_path)
     found = set(ingestor.collection.get(ids=expected_ids)["ids"])
     missing = sorted(doc_id for doc_id in expected_ids if doc_id not in found)
     if missing:
@@ -38,7 +38,7 @@ def main() -> None:
     )
     parser.add_argument("--dataset", default="eval/eval_dataset.json")
     parser.add_argument("--output", default="eval/generation_results.json")
-    parser.add_argument("--db-path", default="./atlas_db")
+    parser.add_argument("--db-path", default="./basalt_db")
     parser.add_argument("--n-results", type=int, default=10)
     parser.add_argument("--top-n", type=int, default=3)
     parser.add_argument("--provider", default="ollama")
@@ -79,7 +79,7 @@ def main() -> None:
         "provider": args.provider,
         "llm_model": args.llm_model,
         "reranker_model": os.environ.get(
-            "ATLAS_RERANKER_MODEL", "BAAI/bge-reranker-base"
+            "BASALT_RERANKER_MODEL", "BAAI/bge-reranker-base"
         ),
         "n_results": args.n_results,
         "top_n": args.top_n,

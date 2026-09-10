@@ -5,7 +5,7 @@ import httpx
 from rag_pipeline import LangChainRAG
 
 
-class AtlasRAG:
+class BasaltRAG:
     def __init__(
         self,
         pipeline: LangChainRAG | None = None,
@@ -42,10 +42,10 @@ class AtlasRAG:
 
 
 if __name__ == "__main__":
-    rag = AtlasRAG()
+    rag = BasaltRAG()
     while True:
         try:
-            user_input = input("\nAsk Atlas (or type 'exit'): ")
+            user_input = input("\nAsk Basalt (or type 'exit'): ")
             if user_input.lower() == "exit":
                 break
             if not user_input.strip():

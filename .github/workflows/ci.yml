@@ -27,8 +27,8 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t atlas-api:ci .
-      - run: docker build -f Dockerfile.gpu -t atlas-api-gpu:ci .
+      - run: docker build -t basalt-api:ci .
+      - run: docker build -f Dockerfile.gpu -t basalt-api-gpu:ci .
       - name: Login to Docker Hub
         if: ${{ env.DOCKERHUB_USERNAME != '' }}
         uses: docker/login-action@v3
@@ -38,11 +38,11 @@ jobs:
       - name: Push images
         if: ${{ env.DOCKERHUB_USERNAME != '' }}
         run: |
-          docker tag atlas-api:ci ${{ secrets.DOCKERHUB_USERNAME }}/atlas-api:${{ github.sha }}
-          docker tag atlas-api:ci ${{ secrets.DOCKERHUB_USERNAME }}/atlas-api:latest
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/atlas-api:${{ github.sha }}
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/atlas-api:latest
-          docker tag atlas-api-gpu:ci ${{ secrets.DOCKERHUB_USERNAME }}/atlas-api-gpu:${{ github.sha }}
-          docker tag atlas-api-gpu:ci ${{ secrets.DOCKERHUB_USERNAME }}/atlas-api-gpu:latest
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/atlas-api-gpu:${{ github.sha }}
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/atlas-api-gpu:latest
+          docker tag basalt-api:ci ${{ secrets.DOCKERHUB_USERNAME }}/basalt-api:${{ github.sha }}
+          docker tag basalt-api:ci ${{ secrets.DOCKERHUB_USERNAME }}/basalt-api:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/basalt-api:${{ github.sha }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/basalt-api:latest
+          docker tag basalt-api-gpu:ci ${{ secrets.DOCKERHUB_USERNAME }}/basalt-api-gpu:${{ github.sha }}
+          docker tag basalt-api-gpu:ci ${{ secrets.DOCKERHUB_USERNAME }}/basalt-api-gpu:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/basalt-api-gpu:${{ github.sha }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/basalt-api-gpu:latest

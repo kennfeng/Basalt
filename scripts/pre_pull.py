@@ -16,7 +16,7 @@ def pre_pull(marker: Path) -> bool:
 
 def main() -> None:
     hf_home = os.environ.get("HF_HOME", "/root/.cache/huggingface")
-    marker = Path(hf_home) / ".atlas_models_ready"
+    marker = Path(hf_home) / ".basalt_models_ready"
     pre_pull(marker)
 
 

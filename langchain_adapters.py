@@ -2,8 +2,8 @@ from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 
-from ingest import AtlasIngestor
-from reranker import AtlasReRanker
+from ingest import BasaltIngestor
+from reranker import BasaltReRanker
 
 
 def create_llm(
@@ -34,7 +34,7 @@ def create_llm(
 
 
 class ChromaRetrieverAdapter:
-    def __init__(self, ingestor: AtlasIngestor, n_results: int = 10) -> None:
+    def __init__(self, ingestor: BasaltIngestor, n_results: int = 10) -> None:
         self.ingestor = ingestor
         self.n_results = n_results
 
@@ -43,7 +43,7 @@ class ChromaRetrieverAdapter:
 
 
 class CrossEncoderRerankerAdapter:
-    def __init__(self, ranker: AtlasReRanker, top_n: int = 3) -> None:
+    def __init__(self, ranker: BasaltReRanker, top_n: int = 3) -> None:
         self.ranker = ranker
         self.top_n = top_n
 

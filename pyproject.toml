@@ -1,7 +1,7 @@
 [project]
-name = "atlas-rag"
+name = "basalt-rag"
 version = "0.1.0"
-description = "Local two-stage RAG: ChromaDB retrieval, cross-encoder re-ranking, Ollama generation"
+description = "Basalt: hybrid BM25+dense retrieval, cross-encoder re-ranking, Ollama/Gemini generation"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 

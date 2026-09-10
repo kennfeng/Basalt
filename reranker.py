@@ -1,3 +1,4 @@
+import os
 from collections.abc import Sequence
 from typing import Any
 
@@ -6,24 +7,57 @@ import torch
 from sentence_transformers import CrossEncoder
 
 
-class AtlasReRanker:
+def _parse_env_int(name: str, default: int) -> int:
+    val = os.getenv(name)
+    if val is None or val == "":
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        return default
+
+
+class BasaltReRanker:
     def __init__(
         self,
         model: Any = None,
-        model_name: str = "BAAI/bge-reranker-base",
-        batch_size: int = 32,
+        model_name: str | None = None,
+        batch_size: int | None = None,
     ) -> None:
+        env_model = os.getenv("BASALT_RERANKER_MODEL")
+        if model_name is None:
+            model_name = env_model or "BAAI/bge-reranker-base"
+        env_batch = _parse_env_int("BASALT_RERANKER_BATCH_SIZE", 32)
+        if batch_size is None:
+            batch_size = env_batch
+        env_device = os.getenv("BASALT_RERANKER_DEVICE")
+        env_fp16 = os.getenv("BASALT_RERANKER_FP16", "false").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+
         if model is not None:
             self.model: Any = model
-            self.device: str = getattr(model, "device", "cpu")
+            self.device: str = getattr(model, "device", env_device or "cpu")
             self.batch_size: int = batch_size
+            self.fp16: bool = env_fp16
             return
 
         print(f"Loading PyTorch Re-ranker model: {model_name}...")
-        self.device: str = "cuda" if torch.cuda.is_available() else "cpu"
+        if env_device:
+            self.device: str = env_device
+        else:
+            self.device: str = "cuda" if torch.cuda.is_available() else "cpu"
         self.batch_size: int = batch_size
+        self.fp16: bool = env_fp16
         try:
             self.model: Any = CrossEncoder(model_name, device=self.device)
+            if self.fp16 and hasattr(self.model, "model"):
+                try:
+                    self.model.model.half()
+                except Exception:  # noqa: BLE001, S110
+                    pass
         except Exception as exc:
             raise RuntimeError(
                 f"Failed to load cross-encoder model '{model_name}'. "
@@ -48,6 +82,7 @@ class AtlasReRanker:
         if not documents:
             return []
         self._validate_top_n(top_n)
+        top_n = min(top_n, 20)
 
         pairs = [[query, doc] for doc in documents]
         scores, ranked_indices = self._score_pairs(pairs)
@@ -63,6 +98,7 @@ class AtlasReRanker:
         if not candidates:
             return []
         self._validate_top_n(top_n)
+        top_n = min(top_n, 20)
 
         pairs = [[query, doc] for _, doc in candidates]
         scores, ranked_indices = self._score_pairs(pairs)
@@ -78,7 +114,7 @@ class AtlasReRanker:
 
 
 if __name__ == "__main__":
-    ranker = AtlasReRanker()
+    ranker = BasaltReRanker()
     test_query = "How do I build a RAG system?"
     test_docs = [
         "To build a RAG system, you need a vector database and an LLM.",
