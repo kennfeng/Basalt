@@ -1,6 +1,6 @@
-# Atlas
+# Basalt
 
-Atlas is a local, two-stage Retrieval-Augmented Generation (RAG) system.
+Basalt is a local, two-stage Retrieval-Augmented Generation (RAG) system.
 
 ### How It Works
 ```
@@ -42,14 +42,14 @@ python main.py
 
 ### HTTP API
 
-Atlas ships a FastAPI service in `app.py`:
+Basalt ships a FastAPI service in `app.py`:
 
 ```bash
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-- `GET /health` — returns `{"status": "ok" | "degraded", "pipeline_initialized", "db_ready", "ollama_reachable"}` with status 200 when healthy and 503 when degraded. It only checks the database directory and Ollama reachability — it never loads models or initializes the pipeline. `db_ready` is true when the database directory exists at `ATLAS_DB_PATH` (the Docker entrypoint creates and seeds it at boot; `python main.py` seeds it at startup), so a fresh deploy reports healthy without any `/ask`. `pipeline_initialized` is informational-only (true after the first `/ask`).
-- `POST /ask` — body `{"query": "..."}` returns the same contract as `AtlasRAG.ask` (`{answer, source_documents}`). Ollama connection errors are returned as `"ERROR: Could not connect to Ollama (...)"` strings with status 200, matching the CLI behavior; other errors propagate as 500s.
+- `GET /health` — returns `{"status": "ok" | "degraded", "pipeline_initialized", "db_ready", "ollama_reachable"}` with status 200 when healthy and 503 when degraded. It only checks the database directory and Ollama reachability — it never loads models or initializes the pipeline. `db_ready` is true when the database directory exists at `BASALT_DB_PATH` (the Docker entrypoint creates and seeds it at boot; `python main.py` seeds it at startup), so a fresh deploy reports healthy without any `/ask`. `pipeline_initialized` is informational-only (true after the first `/ask`).
+- `POST /ask` — body `{"query": "..."}` returns the same contract as `BasaltRAG.ask` (`{answer, source_documents}`). Ollama connection errors are returned as `"ERROR: Could not connect to Ollama (...)"` strings with status 200, matching the CLI behavior; other errors propagate as 500s.
 
 ```bash
 curl http://localhost:8000/health
@@ -62,19 +62,19 @@ curl -X POST http://localhost:8000/ask -H "Content-Type: application/json" -d '{
 
 | Variable | Default |
 |---|---|
-| `ATLAS_DB_PATH` | `./atlas_db` |
-| `ATLAS_RERANKER_MODEL` | `BAAI/bge-reranker-base` |
-| `ATLAS_LLM_MODEL` | `llama3.2:1b` |
-| `ATLAS_PROVIDER` | `ollama` |
-| `ATLAS_OLLAMA_BASE_URL` | (unset) |
-| `ATLAS_N_RESULTS` | `10` |
-| `ATLAS_TOP_N` | `3` |
+| `BASALT_DB_PATH` | `./basalt_db` |
+| `BASALT_RERANKER_MODEL` | `BAAI/bge-reranker-base` |
+| `BASALT_LLM_MODEL` | `llama3.2:1b` |
+| `BASALT_PROVIDER` | `ollama` |
+| `BASALT_BASE_URL` | (unset) |
+| `BASALT_N_RESULTS` | `10` |
+| `BASALT_TOP_N` | `3` |
 
-Precedence: explicit non-`None` argument > environment variable > default. `python main.py` honors all of them, e.g. `ATLAS_OLLAMA_BASE_URL=http://localhost:11434 python main.py`.
+Precedence: explicit non-`None` argument > environment variable > default. `python main.py` honors all of them, e.g. `BASALT_BASE_URL=http://localhost:11434 python main.py`.
 
 ### LLM Provider Swapping
 
-Atlas uses a `create_llm` factory to configure the LLM provider:
+Basalt uses a `create_llm` factory to configure the LLM provider:
 
 ```python
 from langchain_adapters import create_llm
@@ -82,10 +82,10 @@ from langchain_adapters import create_llm
 llm = create_llm(provider="ollama", model_name="llama3.2:1b")
 ```
 
-Pass a provider to `AtlasRAG` or `LangChainRAG.from_defaults()`:
+Pass a provider to `BasaltRAG` or `LangChainRAG.from_defaults()`:
 
 ```python
-rag = AtlasRAG(provider="ollama", model="llama3.2:1b")
+rag = BasaltRAG(provider="ollama", model="llama3.2:1b")
 ```
 
 ### Testing
@@ -99,7 +99,7 @@ The test suite uses mocked ML dependencies (torch, sentence-transformers, chroma
 
 - **Unit tests**: ingest, reranker, adapters, pipeline, eval metrics
 - **E2E tests**: real `results.json` loaded through `EvalReporter` for analytics validation
-- **Wiring tests**: full `AtlasRAG` ask flow with mocked pipeline
+- **Wiring tests**: full `BasaltRAG` ask flow with mocked pipeline
 
 ### Evaluation
 
@@ -149,7 +149,7 @@ Requires Ollama running. Uses a judge LLM (default `llama3.2:1b`) to score each 
 |---|---|
 | `--dataset` | Eval dataset JSON (default: `eval/eval_dataset.json`) |
 | `--output` | Results JSON (default: `eval/generation_results.json`, gitignored) |
-| `--db-path` | ChromaDB directory (default: `./atlas_db`; must contain the eval corpus, see above) |
+| `--db-path` | ChromaDB directory (default: `./basalt_db`; must contain the eval corpus, see above) |
 | `--n-results` | Candidates to retrieve (default: 10) |
 | `--top-n` | Documents after re-ranking (default: 3) |
 | `--provider` | Pipeline LLM provider (default: `ollama`) |
@@ -198,12 +198,12 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-Boot order: the Ollama container pulls `llama3.2:1b` before starting; the app container pre-pulls the Hugging Face models (`all-MiniLM-L6-v2` + `BAAI/bge-reranker-base`) into the `HF_HOME` volume, creates and seeds the database at `ATLAS_DB_PATH` (`python -m scripts.seed_db`, idempotent — a no-op when the collection already has documents), then serves uvicorn. `/health` therefore reports `db_ready: true` and the healthcheck passes on a fresh deploy without any `/ask`; model weights still load lazily on the first `/ask`. For a GPU host, build the CUDA image instead: `docker build -f Dockerfile.gpu -t atlas-api-gpu .`. That image only accelerates if the container is granted the device at run time — `docker run --gpus all` (host needs nvidia-container-toolkit), or uncomment the `deploy.resources.reservations.devices` blocks in `docker-compose.yml` for both `atlas-api` and `ollama`; without this the app silently falls back to CPU.
+Boot order: the Ollama container pulls `llama3.2:1b` before starting; the app container pre-pulls the Hugging Face models (`all-MiniLM-L6-v2` + `BAAI/bge-reranker-base`) into the `HF_HOME` volume, creates and seeds the database at `BASALT_DB_PATH` (`python -m scripts.seed_db`, idempotent — a no-op when the collection already has documents), then serves uvicorn. `/health` therefore reports `db_ready: true` and the healthcheck passes on a fresh deploy without any `/ask`; model weights still load lazily on the first `/ask`. For a GPU host, build the CUDA image instead: `docker build -f Dockerfile.gpu -t basalt-api-gpu .`. That image only accelerates if the container is granted the device at run time — `docker run --gpus all` (host needs nvidia-container-toolkit), or uncomment the `deploy.resources.reservations.devices` blocks in `docker-compose.yml` for both `basalt-api` and `ollama`; without this the app silently falls back to CPU.
 
 ### File Structure
 
 ```
-RAG-Cross-Encoder/
+Basalt/
 ├── main.py
 ├── app.py
 ├── ingest.py
