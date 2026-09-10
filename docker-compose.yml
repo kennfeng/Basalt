@@ -6,18 +6,18 @@ services:
       - |
         ollama serve &
         server_pid=$$!
-        model=$${ATLAS_LLM_MODEL:-llama3.2:1b}
+        model=$${BASALT_LLM_MODEL:-llama3.2:1b}
         until ollama list >/dev/null 2>&1; do sleep 1; done
         ollama show "$$model" >/dev/null 2>&1 || ollama pull "$$model"
         wait "$$server_pid"
     environment:
-      ATLAS_LLM_MODEL: ${ATLAS_LLM_MODEL:-llama3.2:1b}
+      BASALT_LLM_MODEL: ${BASALT_LLM_MODEL:-llama3.2:1b}
       OLLAMA_HOST: 0.0.0.0
       OLLAMA_KEEP_ALIVE: 24h
     volumes:
       - ollama_models:/root/.ollama
     healthcheck:
-      test: ["CMD-SHELL", "ollama show \"$${ATLAS_LLM_MODEL:-llama3.2:1b}\" > /dev/null 2>&1"]
+      test: ["CMD-SHELL", "ollama show \"$${BASALT_LLM_MODEL:-llama3.2:1b}\" > /dev/null 2>&1"]
       interval: 30s
       retries: 5
       start_period: 300s
@@ -31,21 +31,35 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
-  atlas-api:
+  basalt-api:
     build: .
     ports:
       - "8000:8000"
     environment:
-      ATLAS_DB_PATH: ${ATLAS_DB_PATH:-/data/atlas_db}
-      ATLAS_PROVIDER: ${ATLAS_PROVIDER:-ollama}
-      ATLAS_LLM_MODEL: ${ATLAS_LLM_MODEL:-llama3.2:1b}
-      ATLAS_RERANKER_MODEL: ${ATLAS_RERANKER_MODEL:-BAAI/bge-reranker-base}
-      ATLAS_OLLAMA_BASE_URL: ${ATLAS_OLLAMA_BASE_URL:-http://ollama:11434}
-      ATLAS_N_RESULTS: ${ATLAS_N_RESULTS:-10}
-      ATLAS_TOP_N: ${ATLAS_TOP_N:-3}
+      BASALT_DB_PATH: ${BASALT_DB_PATH:-/data/basalt_db}
+      BASALT_PROVIDER: ${BASALT_PROVIDER:-ollama}
+      BASALT_LLM_MODEL: ${BASALT_LLM_MODEL:-llama3.2:1b}
+      BASALT_RERANKER_MODEL: ${BASALT_RERANKER_MODEL:-BAAI/bge-reranker-base}
+      BASALT_BASE_URL: ${BASALT_BASE_URL:-http://ollama:11434}
+      BASALT_N_RESULTS: ${BASALT_N_RESULTS:-10}
+      BASALT_TOP_N: ${BASALT_TOP_N:-3}
+      BASALT_BATCH_SIZE: ${BASALT_BATCH_SIZE:-512}
+      BASALT_HNSW_M: ${BASALT_HNSW_M:-16}
+      BASALT_HNSW_CONSTRUCTION_EF: ${BASALT_HNSW_CONSTRUCTION_EF:-200}
+      BASALT_HNSW_SEARCH_EF: ${BASALT_HNSW_SEARCH_EF:-10}
+      BASALT_AUTO_SEED: ${BASALT_AUTO_SEED:-true}
+      BASALT_HYBRID: ${BASALT_HYBRID:-true}
+      BASALT_HYBRID_DENSE_N: ${BASALT_HYBRID_DENSE_N:-50}
+      BASALT_HYBRID_SPARSE_N: ${BASALT_HYBRID_SPARSE_N:-50}
+      BASALT_HYBRID_RRF_K: ${BASALT_HYBRID_RRF_K:-60}
+      BASALT_HYBRID_TOP_N: ${BASALT_HYBRID_TOP_N:-20}
+      BASALT_RERANKER_DEVICE: ${BASALT_RERANKER_DEVICE:-cpu}
+      BASALT_RERANKER_BATCH_SIZE: ${BASALT_RERANKER_BATCH_SIZE:-32}
+      BASALT_MAX_CONCURRENCY: ${BASALT_MAX_CONCURRENCY:-4}
+      BASALT_ASK_TIMEOUT: ${BASALT_ASK_TIMEOUT:-30}
       HF_HOME: /data/hf-cache
     volumes:
-      - atlas_db:/data
+      - basalt_db:/data
     depends_on:
       ollama:
         condition: service_healthy
@@ -64,10 +78,21 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
+  chroma:
+    image: chromadb/chroma:1.0.0
+    profiles: ["chroma"]
+    environment:
+      - PERSIST_DIRECTORY=/chroma/chroma
+    volumes:
+      - basalt_db:/chroma/chroma
+    ports:
+      - "8001:8000"
+    networks: [internal]
+
 networks:
   internal: {}
   edge: {}
 
 volumes:
-  atlas_db: {}
+  basalt_db: {}
   ollama_models: {}
