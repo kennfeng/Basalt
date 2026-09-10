@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from main import AtlasRAG
+from main import BasaltRAG
 from rag_pipeline import LangChainRAG
 
 
@@ -25,7 +25,7 @@ def test_ask_returns_contract_keys_when_no_candidates(mock_pipeline):
         "answer": "I couldn't find any relevant documents in the database.",
         "source_documents": [],
     }
-    rag = AtlasRAG(pipeline=mock_pipeline)
+    rag = BasaltRAG(pipeline=mock_pipeline)
     result = rag.ask("nonexistent query")
 
     assert set(result) == {"answer", "source_documents"}
@@ -33,7 +33,7 @@ def test_ask_returns_contract_keys_when_no_candidates(mock_pipeline):
 
 
 def test_ask_reranks_candidates_and_returns_llm_response(mock_pipeline):
-    rag = AtlasRAG(pipeline=mock_pipeline)
+    rag = BasaltRAG(pipeline=mock_pipeline)
     result = rag.ask("query")
 
     assert result["answer"] == "This is a concise answer."
@@ -44,7 +44,7 @@ def test_ask_reranks_candidates_and_returns_llm_response(mock_pipeline):
 
 def test_ask_returns_error_message_on_httpx_connect_error(mock_pipeline):
     mock_pipeline.ask.side_effect = httpx.ConnectError("Ollama unavailable")
-    rag = AtlasRAG(pipeline=mock_pipeline)
+    rag = BasaltRAG(pipeline=mock_pipeline)
     result = rag.ask("query")
 
     assert result["answer"].startswith(
@@ -55,7 +55,7 @@ def test_ask_returns_error_message_on_httpx_connect_error(mock_pipeline):
 
 def test_ask_returns_error_message_on_builtin_connection_error(mock_pipeline):
     mock_pipeline.ask.side_effect = ConnectionError("Ollama unavailable")
-    rag = AtlasRAG(pipeline=mock_pipeline)
+    rag = BasaltRAG(pipeline=mock_pipeline)
     result = rag.ask("query")
 
     assert result["answer"].startswith(
@@ -66,7 +66,7 @@ def test_ask_returns_error_message_on_builtin_connection_error(mock_pipeline):
 
 def test_ask_propagates_unexpected_errors(mock_pipeline):
     mock_pipeline.ask.side_effect = RuntimeError("bug in reranker")
-    rag = AtlasRAG(pipeline=mock_pipeline)
+    rag = BasaltRAG(pipeline=mock_pipeline)
 
     with pytest.raises(RuntimeError, match="bug in reranker"):
         rag.ask("query")
@@ -74,13 +74,13 @@ def test_ask_propagates_unexpected_errors(mock_pipeline):
 
 def test_init_stores_injected_pipeline():
     pipeline = MagicMock()
-    rag = AtlasRAG(pipeline=pipeline)
+    rag = BasaltRAG(pipeline=pipeline)
 
     assert rag.pipeline is pipeline
 
 
 def test_ask_forwards_to_pipeline(mock_pipeline):
-    rag = AtlasRAG(pipeline=mock_pipeline)
+    rag = BasaltRAG(pipeline=mock_pipeline)
     rag.ask("hello")
     mock_pipeline.ask.assert_called_once_with("hello")
 
@@ -88,7 +88,7 @@ def test_ask_forwards_to_pipeline(mock_pipeline):
 def test_atlas_rag_forwards_base_url():
     mock_from_defaults = MagicMock()
     with patch.object(LangChainRAG, "from_defaults", mock_from_defaults):
-        AtlasRAG(base_url="http://x")
+        BasaltRAG(base_url="http://x")
     kwargs = mock_from_defaults.call_args.kwargs
     assert kwargs["base_url"] == "http://x"
 
@@ -96,7 +96,7 @@ def test_atlas_rag_forwards_base_url():
 def test_atlas_rag_defaults_are_env_resolvable():
     mock_from_defaults = MagicMock()
     with patch.object(LangChainRAG, "from_defaults", mock_from_defaults):
-        AtlasRAG()
+        BasaltRAG()
     kwargs = mock_from_defaults.call_args.kwargs
     assert kwargs["llm_model_name"] is None
     assert kwargs["provider"] is None

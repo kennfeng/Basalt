@@ -5,7 +5,7 @@ from scripts import pre_pull
 
 
 def test_pre_pull_skips_when_marker_exists(tmp_path):
-    marker = tmp_path / ".atlas_models_ready"
+    marker = tmp_path / ".basalt_models_ready"
     marker.write_text("ready")
     with (
         patch("scripts.pre_pull.SentenceTransformer") as mock_st,
@@ -18,7 +18,7 @@ def test_pre_pull_skips_when_marker_exists(tmp_path):
 
 
 def test_pre_pull_loads_models_and_writes_marker(tmp_path):
-    marker = tmp_path / ".atlas_models_ready"
+    marker = tmp_path / ".basalt_models_ready"
     with (
         patch("scripts.pre_pull.SentenceTransformer") as mock_st,
         patch("scripts.pre_pull.CrossEncoder") as mock_ce,
@@ -38,4 +38,4 @@ def test_main_uses_hf_home_env(tmp_path):
         patch("scripts.pre_pull.CrossEncoder"),
     ):
         pre_pull.main()
-    assert (hf_home / ".atlas_models_ready").exists()
+    assert (hf_home / ".basalt_models_ready").exists()

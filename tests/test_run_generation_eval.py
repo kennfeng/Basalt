@@ -167,12 +167,12 @@ def test_cli_flags_override_env(tmp_path, monkeypatch):
     with patch.dict(
         os.environ,
         {
-            "ATLAS_LLM_MODEL": "env-model",
-            "ATLAS_PROVIDER": "openai",
-            "ATLAS_N_RESULTS": "7",
-            "ATLAS_TOP_N": "2",
-            "ATLAS_DB_PATH": "/env/db",
-            "ATLAS_OLLAMA_BASE_URL": "http://env",
+            "BASALT_LLM_MODEL": "env-model",
+            "BASALT_PROVIDER": "openai",
+            "BASALT_N_RESULTS": "7",
+            "BASALT_TOP_N": "2",
+            "BASALT_DB_PATH": "/env/db",
+            "BASALT_BASE_URL": "http://env",
         },
     ):
         run_generation_eval.main()
@@ -219,7 +219,7 @@ def test_cli_records_reranker_model_from_env(tmp_path, monkeypatch):
             str(out),
         ],
     )
-    with patch.dict(os.environ, {"ATLAS_RERANKER_MODEL": "BAAI/bge-reranker-large"}):
+    with patch.dict(os.environ, {"BASALT_RERANKER_MODEL": "BAAI/bge-reranker-large"}):
         run_generation_eval.main()
     data = json.loads(out.read_text())
     assert data["config"]["reranker_model"] == "BAAI/bge-reranker-large"
@@ -229,7 +229,7 @@ def test_validate_corpus_db_passes_when_all_ids_present(monkeypatch):
     mock_ingestor = MagicMock()
     mock_ingestor.collection.get.return_value = {"ids": ["doc_0", "doc_1"]}
     monkeypatch.setattr(
-        run_generation_eval, "AtlasIngestor", MagicMock(return_value=mock_ingestor)
+        run_generation_eval, "BasaltIngestor", MagicMock(return_value=mock_ingestor)
     )
     data = {"corpus": [{"id": "doc_0"}, {"id": "doc_1"}]}
     run_generation_eval.validate_corpus_db("/data/db", data)
@@ -240,7 +240,7 @@ def test_validate_corpus_db_raises_on_missing_ids(monkeypatch):
     mock_ingestor = MagicMock()
     mock_ingestor.collection.get.return_value = {"ids": ["doc_0"]}
     monkeypatch.setattr(
-        run_generation_eval, "AtlasIngestor", MagicMock(return_value=mock_ingestor)
+        run_generation_eval, "BasaltIngestor", MagicMock(return_value=mock_ingestor)
     )
     data = {"corpus": [{"id": "doc_0"}, {"id": "doc_1"}]}
     with pytest.raises(ValueError, match="does not contain the eval corpus"):
@@ -263,7 +263,7 @@ def test_cli_refuses_default_db_missing_corpus(tmp_path, monkeypatch):
     mock_ingestor = MagicMock()
     mock_ingestor.collection.get.return_value = {"ids": []}
     monkeypatch.setattr(
-        run_generation_eval, "AtlasIngestor", MagicMock(return_value=mock_ingestor)
+        run_generation_eval, "BasaltIngestor", MagicMock(return_value=mock_ingestor)
     )
     monkeypatch.setattr(
         sys,

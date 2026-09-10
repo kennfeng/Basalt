@@ -2,7 +2,6 @@
 
 # Local Database
 basalt_db/
-atlas_db/
 
 # Eval Database
 eval_db/
