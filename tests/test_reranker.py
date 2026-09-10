@@ -3,11 +3,11 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from reranker import AtlasReRanker
+from reranker import BasaltReRanker
 
 
 def make_reranker():
-    return AtlasReRanker()
+    return BasaltReRanker()
 
 
 def test_rerank_orders_documents_by_descending():

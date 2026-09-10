@@ -124,16 +124,16 @@ def test_create_app_returns_fastapi_instance():
 
 
 def test_check_db_true_when_directory_exists(tmp_path):
-    db = tmp_path / "atlas_db"
+    db = tmp_path / "basalt_db"
     db.mkdir()
     assert check_db(str(db)) is True
 
 
 def test_check_db_false_when_directory_missing(tmp_path):
-    assert check_db(str(tmp_path / "atlas_db")) is False
+    assert check_db(str(tmp_path / "basalt_db")) is False
 
 
 def test_check_db_false_for_plain_file(tmp_path):
-    file = tmp_path / "atlas_db"
+    file = tmp_path / "basalt_db"
     file.write_text("not a db")
     assert check_db(str(file)) is False
