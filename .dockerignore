@@ -7,7 +7,14 @@ venv
 .ruff_cache
 __pycache__
 *.pyc
-atlas_db
+basalt_db
 eval_db
+eval/eval_db
 eval/generation_results.json
+eval/scale_report.json
 tests
+.opencode
+DESIGN.md
+AI.md
+basalt_db/bm25.pkl
+basalt_db/bm25.json
