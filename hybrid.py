@@ -1,4 +1,4 @@
-import pickle
+import json
 import re
 from pathlib import Path
 
@@ -67,8 +67,8 @@ class BM25Index:
     def save(self, path: Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("wb") as f:
-            pickle.dump(
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(
                 {
                     "corpus_ids": self.corpus_ids,
                     "corpus_texts": self.corpus_texts,
@@ -79,8 +79,8 @@ class BM25Index:
 
     @classmethod
     def load(cls, path: Path) -> "BM25Index":
-        with Path(path).open("rb") as f:
-            data = pickle.load(f)
+        with Path(path).open("r", encoding="utf-8") as f:
+            data = json.load(f)
         return cls(
             corpus_ids=data["corpus_ids"],
             corpus_texts=data["corpus_texts"],
