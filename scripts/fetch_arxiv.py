@@ -1,13 +1,22 @@
 import argparse
+import ipaddress
 import json
 import re
+import urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
 import httpx
 
+try:
+    import defusedxml.ElementTree as DET  # type: ignore
+except ImportError:
+    DET = None  # type: ignore
+
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
+_MAX_XML_BYTES = 10 * 1024 * 1024
+_MAX_ENTRIES = 10000
 
 
 def _parse_arxiv_id(raw_id: str) -> str:
@@ -25,8 +34,36 @@ def _parse_year(published: str) -> int:
     return 0
 
 
+def _validate_url(url: str) -> None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"URL must be http or https: {url}")
+    host = parsed.hostname or ""
+    if not host:
+        raise ValueError(f"URL missing host: {url}")
+    lowered = host.lower()
+    if lowered in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+        raise ValueError(f"URL host not allowed: {host}")
+    if lowered == "169.254.169.254" or lowered == "metadata.google.internal":
+        raise ValueError(f"URL host not allowed: {host}")
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise ValueError(f"URL host not allowed: {host}")
+    except ValueError as exc:
+        if "not allowed" in str(exc):
+            raise
+
+
 def _parse_feed(xml_text: str) -> list[dict[str, Any]]:
-    root = ET.fromstring(xml_text)
+    if len(xml_text.encode("utf-8")) > _MAX_XML_BYTES:
+        raise ValueError("XML response too large")
+    if "<!DOCTYPE" in xml_text or "<!ENTITY" in xml_text:
+        raise ValueError("DTD and entities are forbidden")
+    if DET is not None:
+        root = DET.fromstring(xml_text)
+    else:
+        root = ET.fromstring(xml_text)
     entries = []
     for entry in root.findall("atom:entry", ATOM_NS):
         raw_id_elem = entry.find("atom:id", ATOM_NS)
@@ -76,14 +113,18 @@ def _parse_feed(xml_text: str) -> list[dict[str, Any]]:
 
 
 def fetch_arxiv(query_url: str, n: int, output: Path) -> int:
-    if n < 1:
-        raise ValueError(f"n must be >= 1, got {n}")
+    if n < 1 or n > _MAX_ENTRIES:
+        raise ValueError(f"n must be between 1 and {_MAX_ENTRIES}, got {n}")
+    _validate_url(query_url)
     url = query_url
     if "max_results" not in url:
         sep = "&" if "?" in url else "?"
         url = f"{url}{sep}max_results={n}"
-    resp = httpx.get(url, timeout=30.0)
+    _validate_url(url)
+    resp = httpx.get(url, timeout=30.0, follow_redirects=False)
     resp.raise_for_status()
+    if len(resp.content) > _MAX_XML_BYTES:
+        raise ValueError("Response too large")
     entries = _parse_feed(resp.text)
     entries = entries[:n]
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -97,7 +138,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch arXiv abstracts to JSONL")
     parser.add_argument(
         "--query-url",
-        default="http://export.arxiv.org/api/query?search_query=cat:cs.IR&sortBy=submittedDate",
+        default="https://export.arxiv.org/api/query?search_query=cat:cs.IR&sortBy=submittedDate",
     )
     parser.add_argument("--n", type=int, default=100)
     parser.add_argument("--output", type=str, default="data/sample.jsonl")
@@ -110,7 +151,7 @@ def main() -> None:
     args = parser.parse_args()
     query_url = args.query_url
     if args.query:
-        query_url = f"http://export.arxiv.org/api/query?search_query={args.query}&sortBy=submittedDate"
+        query_url = f"https://export.arxiv.org/api/query?search_query={args.query}&sortBy=submittedDate"
     out = Path(args.output)
     count = fetch_arxiv(query_url, n=args.n, output=out)
     print(f"Wrote {count} records to {out}")
