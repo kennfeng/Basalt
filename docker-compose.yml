@@ -57,6 +57,7 @@ services:
       BASALT_RERANKER_BATCH_SIZE: ${BASALT_RERANKER_BATCH_SIZE:-32}
       BASALT_MAX_CONCURRENCY: ${BASALT_MAX_CONCURRENCY:-4}
       BASALT_ASK_TIMEOUT: ${BASALT_ASK_TIMEOUT:-30}
+      BASALT_API_KEY: ${BASALT_API_KEY:-}
       HF_HOME: /data/hf-cache
     volumes:
       - basalt_db:/data

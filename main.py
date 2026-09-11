@@ -31,12 +31,11 @@ class BasaltRAG:
         )
 
     def ask(self, query: str) -> dict[str, Any]:
-        print(f"\n[QUERY]: {query}")
         try:
-            return self.pipeline.ask(query)
-        except (ConnectionError, httpx.TransportError) as e:
+            return self.pipeline.ask(query[:2000])
+        except (ConnectionError, httpx.TransportError):
             return {
-                "answer": f"ERROR: Could not connect to Ollama ({type(e).__name__}: {e})",
+                "answer": "ERROR: Could not connect to Ollama. Please check that Ollama is running.",
                 "source_documents": [],
             }
 

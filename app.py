@@ -1,10 +1,11 @@
 import os
+import secrets
 from pathlib import Path
 from threading import Lock, Semaphore
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -12,7 +13,7 @@ from main import BasaltRAG
 
 
 class AskRequest(BaseModel):
-    query: str = Field(min_length=1)
+    query: str = Field(min_length=1, max_length=2000)
 
 
 def check_db(db_path: str) -> bool:
@@ -26,6 +27,46 @@ def check_ollama(base_url: str | None) -> bool:
         return response.status_code == 200
     except (httpx.HTTPError, OSError):
         return False
+
+
+def _parse_int_env(name: str, default: int, lo: int, hi: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        val = int(raw)
+    except ValueError:
+        return default
+    if val < lo:
+        return lo
+    if val > hi:
+        return hi
+    return val
+
+
+def _parse_float_env(name: str, default: float, lo: float, hi: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        val = float(raw)
+    except ValueError:
+        return default
+    if val < lo:
+        return lo
+    if val > hi:
+        return hi
+    return val
+
+
+def verify_api_key(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> None:
+    expected = os.getenv("BASALT_API_KEY")
+    if not expected:
+        return
+    if not x_api_key or not secrets.compare_digest(x_api_key, expected):
+        raise HTTPException(status_code=401, detail="Invalid API key")
 
 
 def get_rag(request: Request) -> BasaltRAG:
@@ -45,8 +86,8 @@ def create_app(rag_factory: Any = None) -> FastAPI:
     app.state.rag = None
     app.state.rag_factory = rag_factory
     app.state.lock = Lock()
-    app.state.semaphore = Semaphore(int(os.getenv("BASALT_MAX_CONCURRENCY", "4")))
-    app.state.ask_timeout = float(os.getenv("BASALT_ASK_TIMEOUT", "30"))
+    app.state.semaphore = Semaphore(_parse_int_env("BASALT_MAX_CONCURRENCY", 4, 1, 32))
+    app.state.ask_timeout = _parse_float_env("BASALT_ASK_TIMEOUT", 30.0, 1.0, 300.0)
 
     @app.get("/health")
     def health() -> JSONResponse:
@@ -78,7 +119,11 @@ def create_app(rag_factory: Any = None) -> FastAPI:
         )
 
     @app.post("/ask")
-    def ask(body: AskRequest, request: Request) -> dict:
+    def ask(
+        body: AskRequest,
+        request: Request,
+        _auth: None = Depends(verify_api_key),
+    ) -> dict:
         sem: Semaphore = request.app.state.semaphore
         timeout: float = request.app.state.ask_timeout
         acquired = sem.acquire(timeout=timeout)

@@ -47,8 +47,9 @@ def test_ask_returns_error_message_on_httpx_connect_error(mock_pipeline):
     rag = BasaltRAG(pipeline=mock_pipeline)
     result = rag.ask("query")
 
-    assert result["answer"].startswith(
-        "ERROR: Could not connect to Ollama (ConnectError:"
+    assert (
+        result["answer"]
+        == "ERROR: Could not connect to Ollama. Please check that Ollama is running."
     )
     assert result["source_documents"] == []
 
@@ -58,8 +59,9 @@ def test_ask_returns_error_message_on_builtin_connection_error(mock_pipeline):
     rag = BasaltRAG(pipeline=mock_pipeline)
     result = rag.ask("query")
 
-    assert result["answer"].startswith(
-        "ERROR: Could not connect to Ollama (ConnectionError:"
+    assert (
+        result["answer"]
+        == "ERROR: Could not connect to Ollama. Please check that Ollama is running."
     )
     assert result["source_documents"] == []
 
