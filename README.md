@@ -91,6 +91,7 @@ Health is `ok` when the DB directory exists and Ollama is reachable; the collect
 | `BASALT_HYBRID_DENSE_N` / `SPARSE_N` / `RRF_K` / `TOP_N` | `50` / `50` / `60` / `20` | Hybrid RRF tuning |
 | `BASALT_HNSW_M` / `CONSTRUCTION_EF` / `SEARCH_EF` | `16` / `200` / `10` | HNSW index tuning |
 | `BASALT_BATCH_SIZE` | `512` | `upsert` batch size |
+| `BASALT_EMBED_DEVICE` / `EMBED_BATCH_SIZE` | `cpu` / `32` | Embedding device + batch |
 | `BASALT_RERANKER_DEVICE` / `BATCH_SIZE` / `FP16` | `cpu` / `32` / `false` | Reranker accel |
 | `BASALT_MAX_CONCURRENCY` / `ASK_TIMEOUT` | `4` / `30` | API semaphore + timeout |
 | `BASALT_AUTO_SEED` | `true` | `false` disables seeding empty DB |

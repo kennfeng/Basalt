@@ -89,8 +89,6 @@ class BM25Index:
 
     @classmethod
     def build_from_jsonl(cls, jsonl_path: Path) -> "BM25Index":
-        import json
-
         ids: list[str] = []
         texts: list[str] = []
         with Path(jsonl_path).open(encoding="utf-8") as f:

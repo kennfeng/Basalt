@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Any
 
 from langchain_core.output_parsers import StrOutputParser
@@ -137,8 +138,6 @@ class LangChainRAG:
         hybrid_retriever: Any | None = None
         if hybrid_enabled and _HYBRID_AVAILABLE and HybridRetriever is not None:
             try:
-                from pathlib import Path
-
                 dense_n = _env_int("BASALT_HYBRID_DENSE_N", 50, 1, 100)
                 sparse_n = _env_int("BASALT_HYBRID_SPARSE_N", 50, 1, 100)
                 rrf_k = _env_int("BASALT_HYBRID_RRF_K", 60, 1, 200)
