@@ -19,8 +19,5 @@ line-length = 88
 select = ["E", "F", "ERA"]
 ignore = []
 
-[tool.ruff.lint.flake8-eradicate]
-aggressive = true
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
