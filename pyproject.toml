@@ -13,5 +13,14 @@ build-backend = "setuptools.build_meta"
 target-version = "py310"
 line-length = 88
 
+# TEMP: enforce no-comments style — ERA001 flags commented-out code as proxy.
+# Remove this block when lifting the no-comments rule.
+[tool.ruff.lint]
+select = ["E", "F", "ERA"]
+ignore = []
+
+[tool.ruff.lint.flake8-eradicate]
+aggressive = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
