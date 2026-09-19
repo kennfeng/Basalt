@@ -34,7 +34,7 @@ services:
   basalt-api:
     build: .
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       BASALT_DB_PATH: ${BASALT_DB_PATH:-/data/basalt_db}
       BASALT_PROVIDER: ${BASALT_PROVIDER:-ollama}
@@ -79,16 +79,15 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
-  chroma:
-    image: chromadb/chroma:1.0.0
-    profiles: ["chroma"]
-    environment:
-      - PERSIST_DIRECTORY=/chroma/chroma
-    volumes:
-      - basalt_db:/chroma/chroma
-    ports:
-      - "8001:8000"
-    networks: [internal]
+  cloudflared:
+    image: cloudflare/cloudflared:2024.10.0
+    profiles: ["cloudflare"]
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      basalt-api:
+        condition: service_healthy
+    networks: [edge]
+    restart: unless-stopped
 
 networks:
   internal: {}
