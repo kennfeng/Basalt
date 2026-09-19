@@ -71,9 +71,24 @@ def test_fetch_arxiv_respects_n_limit(tmp_path):
 
     sample_xml = """<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <entry><id>http://arxiv.org/abs/2301.00001v1</id><published>2023-01-01T00:00:00Z</published><title>T1</title><summary>A1</summary><author><name>A</name></author><category term="cs.AI"/></entry>
-  <entry><id>http://arxiv.org/abs/2301.00002v1</id><published>2023-01-01T00:00:00Z</published><title>T2</title><summary>A2</summary><author><name>B</name></author><category term="cs.AI"/></entry>
-  <entry><id>http://arxiv.org/abs/2301.00003v1</id><published>2023-01-01T00:00:00Z</published><title>T3</title><summary>A3</summary><author><name>C</name></author><category term="cs.AI"/></entry>
+  <entry>
+    <id>http://arxiv.org/abs/2301.00001v1</id>
+    <published>2023-01-01T00:00:00Z</published>
+    <title>T1</title><summary>A1</summary>
+    <author><name>A</name></author><category term="cs.AI"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2301.00002v1</id>
+    <published>2023-01-01T00:00:00Z</published>
+    <title>T2</title><summary>A2</summary>
+    <author><name>B</name></author><category term="cs.AI"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2301.00003v1</id>
+    <published>2023-01-01T00:00:00Z</published>
+    <title>T3</title><summary>A3</summary>
+    <author><name>C</name></author><category term="cs.AI"/>
+  </entry>
 </feed>"""
     mock_resp = MagicMock()
     mock_resp.text = sample_xml

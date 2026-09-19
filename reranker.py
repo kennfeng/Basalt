@@ -119,7 +119,10 @@ if __name__ == "__main__":
     test_docs = [
         "To build a RAG system, you need a vector database and an LLM.",
         "Making a sandwich requires bread, cheese, and ham.",
-        "Retrieval-Augmented Generation (RAG) combines search with LLM generation for better accuracy.",
+        (
+            "Retrieval-Augmented Generation (RAG) combines search "
+            "with LLM generation for better accuracy."
+        ),
         "The weather today is sunny with a chance of rain.",
     ]
 

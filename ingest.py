@@ -95,7 +95,8 @@ class BasaltIngestor:
         if chunk_size is not None and chunk_size > 0:
             if chunk_overlap >= chunk_size:
                 raise ValueError(
-                    f"chunk_overlap must be < chunk_size, got chunk_overlap={chunk_overlap}, "
+                    f"chunk_overlap must be < chunk_size, "
+                    f"got chunk_overlap={chunk_overlap}, "
                     f"chunk_size={chunk_size}"
                 )
             chunked_texts: list[str] = []

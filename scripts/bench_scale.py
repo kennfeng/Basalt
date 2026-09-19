@@ -40,7 +40,7 @@ def bench(
     if not corpus.exists():
         raise FileNotFoundError(f"corpus not found: {corpus}")
     all_lines = corpus.read_text(encoding="utf-8").strip().splitlines()
-    all_objs = [json.loads(l) for l in all_lines if l.strip()]
+    all_objs = [json.loads(line) for line in all_lines if line.strip()]
     results: list[dict[str, Any]] = []
     for n in n_values:
         if n < 1:

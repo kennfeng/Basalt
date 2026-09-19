@@ -20,10 +20,27 @@ def gen_corpus(n: int, output: Path, seed: int = 42) -> int:
         "Efficient Ingestion with Checkpointing",
     ]
     abstracts = [
-        "We study hybrid retrieval combining dense embeddings and BM25 with reciprocal rank fusion. Cross-encoder re-ranking improves mean reciprocal rank. Experiments on synthetic abstracts validate throughput and memory.",
-        "This work evaluates dense retrieval at scale. Our corpus contains abstract-level documents. We measure retrieval latency percentiles and disk usage. Results inform deployment on constrained instances.",
-        "We present ingestion with batched upserts and byte-offset checkpoints. The method handles interruptions and avoids duplicate identifiers. Throughput scales linearly with batch size.",
-        "We analyze HNSW parameters for vector search. Tuning M and efConstruction trades recall for build time. Our benchmark reports p50, p95, and p99 latencies.",
+        (
+            "We study hybrid retrieval combining dense embeddings and BM25 "
+            "with reciprocal rank fusion. Cross-encoder re-ranking improves "
+            "mean reciprocal rank. Experiments on synthetic abstracts validate "
+            "throughput and memory."
+        ),
+        (
+            "This work evaluates dense retrieval at scale. Our corpus contains "
+            "abstract-level documents. We measure retrieval latency percentiles "
+            "and disk usage. Results inform deployment on constrained instances."
+        ),
+        (
+            "We present ingestion with batched upserts and byte-offset "
+            "checkpoints. The method handles interruptions and avoids duplicate "
+            "identifiers. Throughput scales linearly with batch size."
+        ),
+        (
+            "We analyze HNSW parameters for vector search. Tuning M and "
+            "efConstruction trades recall for build time. Our benchmark "
+            "reports p50, p95, and p99 latencies."
+        ),
     ]
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8") as f:

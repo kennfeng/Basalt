@@ -185,7 +185,8 @@ def main() -> None:
 
     if args.k < 1 or args.k > args.retrieve_n:
         raise ValueError(
-            f"--k ({args.k}) must be at least 1 and must not exceed --retrieve-n ({args.retrieve_n})"
+            f"--k ({args.k}) must be at least 1 "
+            f"and must not exceed --retrieve-n ({args.retrieve_n})"
         )
 
     eval_base_dir = Path(__file__).parent.resolve()
@@ -231,7 +232,8 @@ def main() -> None:
     rerank_results = []
 
     print(
-        f"\nRunning evaluation on {len(queries)} queries with k={args.k} and retrieve_n={args.retrieve_n}...\n"
+        f"\nRunning evaluation on {len(queries)} queries "
+        f"with k={args.k} and retrieve_n={args.retrieve_n}...\n"
     )
 
     for item in queries:

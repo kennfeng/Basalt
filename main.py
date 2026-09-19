@@ -35,7 +35,10 @@ class BasaltRAG:
             return self.pipeline.ask(query[:2000])
         except (ConnectionError, httpx.TransportError):
             return {
-                "answer": "ERROR: Could not connect to Ollama. Please check that Ollama is running.",
+                "answer": (
+                    "ERROR: Could not connect to Ollama. "
+                    "Please check that Ollama is running."
+                ),
                 "source_documents": [],
             }
 
