@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Basalt — Local RAG Research Copilot</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="header">
+<div class="container">
+<h1>Basalt</h1>
+<p class="subtitle">Local two-stage RAG over arXiv abstracts — Hybrid BM25 + Dense RRF → Cross-Encoder Re-ranking → Grounded LLM</p>
+<p class="stack">ChromaDB HNSW · Sentence-Transformers all-MiniLM-L6-v2 · BAAI bge-reranker-base · PyTorch · FastAPI · LangChain · Ollama · Docker</p>
+</div>
+</header>
+<main class="container">
+<section id="health" class="card">
+<h2>Health &amp; Observability <span class="badge" id="health-status">checking…</span></h2>
+<div class="health-grid">
+<div><strong>Status:</strong> <span id="h-status">-</span></div>
+<div><strong>DB:</strong> <span id="h-db">-</span> (<span id="h-count">-</span> docs)</div>
+<div><strong>Ollama:</strong> <span id="h-ollama">-</span></div>
+<div><strong>Pipeline:</strong> <span id="h-pipeline">-</span></div>
+<div><strong>Hybrid:</strong> <span id="h-hybrid">-</span> RRF k=<span id="h-rrf">-</span></div>
+<div><strong>BM25:</strong> <span id="h-bm25">-</span></div>
+<div><strong>Models:</strong> <span id="h-models">-</span></div>
+<div><strong>Vector DB:</strong> <span id="h-vdb">-</span></div>
+<div><strong>Retrieval:</strong> <span id="h-pipe">-</span></div>
+<div><strong>Trace:</strong> <span id="h-trace">-</span></div>
+</div>
+<div class="health-details">
+<details>
+<summary>Hybrid &amp; HNSW config (BASALT_* env)</summary>
+<pre id="h-config">loading…</pre>
+</details>
+</div>
+</section>
+<section id="ask" class="card">
+<h2>Ask</h2>
+<div class="ask-input">
+<textarea id="query" rows="3" maxlength="2000" placeholder="What is cross-encoder re-ranking for scientific literature?"></textarea>
+<div class="ask-row">
+<span id="char-count">0 / 2000</span>
+<label><input type="checkbox" id="stream-toggle" checked /> Stream (SSE /ask/stream)</label>
+<button id="ask-btn">Ask Basalt</button>
+</div>
+</div>
+<div id="answer-wrap" class="hidden">
+<div class="latency-row">Latency: <span id="latency">-</span> ms <span class="badge" id="trace-badge"></span></div>
+<div id="answer" class="answer"></div>
+<h3>Sources — Re-ranked top 3 <span class="hint">Hybrid BM25+dense RRF top 20 → Cross-Encoder bge-reranker</span></h3>
+<div id="sources" class="sources"></div>
+</div>
+<div id="error" class="error hidden"></div>
+</section>
+<section id="inspect" class="card">
+<h2>Inspect — Retrieval Trace</h2>
+<p class="hint">Dense hits (Chroma HNSW n=50) + Sparse hits (BM25 rank-bm25 n=50) fused by Reciprocal Rank Fusion k=60 → top 20 → Cross-Encoder rerank → top 3 to LLM. 88 chars, py310, ruff.</p>
+<details open>
+<summary>How grounding works</summary>
+<p>Context truncated to 12000 chars, query to 2000. Grounded prompt cites re-ranked abstracts. Untrusted-data guard in SYSTEM_PROMPT. Eval: MRR 0.467 → 0.733 (+57%) at k=3, p50 1.85s p90 2.02s (CPU, batch 32).</p>
+</details>
+</section>
+<section id="corpus" class="card">
+<h2>Corpus</h2>
+<p><span id="corpus-count">250</span> arXiv abstracts (cs.AI / cs.CL / cs.IR / cs.CV / cs.LG) from <code>data/sample.jsonl</code> + 9-doc fallback <code>sample_data.py</code>. Persistent at <code>basalt_db/</code> with <code>bm25.json</code>. Ingest via <code>bulk_ingest --batch-size 512 --resume</code>.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>Embeddings</td><td>Sentence-Transformers all-MiniLM-L6-v2 (384d, cosine)</td></tr>
+<tr><td>Vector DB</td><td>ChromaDB PersistentClient HNSW (M=16, construction_ef=200, search_ef=10)</td></tr>
+<tr><td>Sparse</td><td>BM25Okapi tokenize \w+ lower, JSON persisted</td></tr>
+<tr><td>Fusion</td><td>RRF weights 0.5/0.5 k=60 top 20</td></tr>
+<tr><td>Reranker</td><td>BAAI/bge-reranker-base batch 32 cpu/cuda fp16 optional</td></tr>
+<tr><td>LLM</td><td>Ollama llama3.2:1b or OpenAI-compatible via BASALT_PROVIDER / BASALT_BASE_URL</td></tr>
+<tr><td>API</td><td>FastAPI POST /ask (1-2000 chars) 401 X-API-Key, 503 Semaphore 4/30s, GET /health, POST /ask/stream SSE</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="eval" class="card">
+<h2>Evaluation</h2>
+<p>Frozen <code>eval/results.json</code>: 15 queries × 46 docs (31 gt + 15 hard negatives), k=3 retrieve_n=10.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Metric</th><th>Retrieval only</th><th>Retrieval + Re-rank</th></tr></thead>
+<tbody>
+<tr><td>Hit Rate @3</td><td>100%</td><td>100%</td></tr>
+<tr><td>MRR @3</td><td>0.467</td><td><strong>0.733 (+57%)</strong></td></tr>
+<tr><td>Latency mean CPU</td><td>~55 ms</td><td>~1.87 s (p50 1.85 s, p90 2.02 s)</td></tr>
+</tbody>
+</table>
+</div>
+<p class="hint">Run: <code>python eval/run_eval.py --yes</code> · Analyzer: <code>EvalReporter</code> (pandas) · CI: ruff check + format + 219 pytest (mocked torch/chromadb)</p>
+</section>
+<footer class="footer">
+<p>ATS: RAG · Retrieval-Augmented Generation · LLM · FastAPI · Docker · Vector Database · ChromaDB · HNSW · BM25 · Hybrid Retrieval · Reciprocal Rank Fusion · Cross-Encoder · Re-ranking · Sentence-Transformers · PyTorch · LangChain · REST API · Docker Compose · CI/CD · Pytest · Evaluation · MRR · Latency · SSE · Observability · TypeScript · Vite</p>
+<p><a href="/health">/health</a> · <a href="/docs">/docs (OpenAPI)</a> · <a href="/ask">POST /ask</a> · <a href="/ask/stream">POST /ask/stream (SSE)</a> · <code>docker compose up --build -d</code></p>
+</footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
