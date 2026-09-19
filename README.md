@@ -141,13 +141,11 @@ CI runs `ruff check` / `ruff format --check` / `pytest` on every push (see `.git
 ```bash
 cp .env.example .env
 docker compose up --build -d          # app :8001, ollama :11434
-# prod https via Cloudflare Tunnel (same image, edge TLS):
-# CLOUDFLARE_TUNNEL_TOKEN=xxx docker compose --profile cloudflare up --build -d  # https://<your-domain> → basalt-api:8000
 ```
 
 Image pre-pulls HF models (`all-MiniLM-L6-v2`, `bge-reranker`) and seeds `BASALT_DB_PATH` at boot via `scripts/entrypoint.sh:1`. Models load lazily on first `/ask`. For GPU: `docker build -f Dockerfile.gpu -t basalt-api-gpu .` and uncomment `deploy.resources` in `docker-compose.yml` (`--gpus all`).
 
-UI is served from the same image (`ui/` → `/ui/`), no Node at runtime. Future **TypeScript** + **Vite** build (`ui/dist`) replaces `ui/` without backend changes. Production uses Cloudflare Tunnel only — no Render or other PaaS.
+UI is served from the same image (`ui/` → `/ui/`), no Node at runtime. Future **TypeScript** + **Vite** build (`ui/dist`) replaces `ui/` without backend changes. Local-only — no PaaS or tunnel required.
 
 ## Project Structure
 

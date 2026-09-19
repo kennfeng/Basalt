@@ -70,7 +70,7 @@ services:
       retries: 5
       start_period: 300s
     restart: unless-stopped
-    networks: [internal, edge]
+    networks: [internal]
     # deploy:
     #   resources:
     #     reservations:
@@ -79,19 +79,8 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
-  cloudflared:
-    image: cloudflare/cloudflared:2024.10.0
-    profiles: ["cloudflare"]
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      basalt-api:
-        condition: service_healthy
-    networks: [edge]
-    restart: unless-stopped
-
 networks:
   internal: {}
-  edge: {}
 
 volumes:
   basalt_db: {}
