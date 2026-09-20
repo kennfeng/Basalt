@@ -152,17 +152,17 @@ class LangChainRAG:
                 if load_or_build_bm25 is not None:
                     if bm25_path.exists():
                         try:
-                            bm25_index = load_or_build_bm25(pickle_path=bm25_path)
+                            bm25_index = load_or_build_bm25(json_path=bm25_path)
                         except Exception:  # noqa: BLE001
                             bm25_index = None
                     elif legacy_path.exists():
                         try:
-                            bm25_index = load_or_build_bm25(pickle_path=legacy_path)
+                            bm25_index = load_or_build_bm25(json_path=legacy_path)
                         except Exception:  # noqa: BLE001
                             bm25_index = None
                     if bm25_index is None and sample_jsonl.exists():
                         bm25_index = load_or_build_bm25(
-                            jsonl_path=sample_jsonl, pickle_path=bm25_path
+                            jsonl_path=sample_jsonl, json_path=bm25_path
                         )
                     if bm25_index is None:
                         try:
@@ -183,7 +183,7 @@ class LangChainRAG:
                                 bm25_index = load_or_build_bm25(
                                     corpus_ids=corpus_ids,
                                     corpus_texts=corpus_texts,
-                                    pickle_path=bm25_path,
+                                    json_path=bm25_path,
                                 )
                         except Exception:  # noqa: BLE001
                             bm25_index = None

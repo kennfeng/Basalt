@@ -1,5 +1,6 @@
 import json
 import re
+import warnings
 from pathlib import Path
 
 try:
@@ -67,7 +68,8 @@ class BM25Index:
     def save(self, path: Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as f:
+        tmp = path.with_name(path.name + ".tmp")
+        with tmp.open("w", encoding="utf-8") as f:
             json.dump(
                 {
                     "corpus_ids": self.corpus_ids,
@@ -76,6 +78,16 @@ class BM25Index:
                 },
                 f,
             )
+        try:
+            if tmp.stat().st_size > 200 * 1024 * 1024:
+                warnings.warn(
+                    "bm25.json >200MB ... consider sharded json or tantivy",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        except Exception:  # noqa: BLE001, S110
+            pass
+        tmp.replace(path)
 
     @classmethod
     def load(cls, path: Path) -> "BM25Index":
@@ -113,29 +125,37 @@ class BM25Index:
 
 
 def load_or_build_bm25(
-    jsonl_path: Path | None = None,
+    json_path: Path | None = None,
     pickle_path: Path | None = None,
+    jsonl_path: Path | None = None,
     corpus_ids: list[str] | None = None,
     corpus_texts: list[str] | None = None,
 ) -> BM25Index | None:
-    if pickle_path is not None and Path(pickle_path).exists():
+    if pickle_path is not None and json_path is None:
+        warnings.warn(
+            "pickle_path deprecated use json_path",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        json_path = pickle_path
+    if json_path is not None and Path(json_path).exists():
         try:
-            return BM25Index.load(Path(pickle_path))
+            return BM25Index.load(Path(json_path))
         except Exception:  # noqa: BLE001, S110
             pass
     if corpus_ids is not None and corpus_texts is not None:
         idx = BM25Index(corpus_ids=corpus_ids, corpus_texts=corpus_texts)
-        if pickle_path is not None:
+        if json_path is not None:
             try:
-                idx.save(Path(pickle_path))
+                idx.save(Path(json_path))
             except Exception:  # noqa: BLE001, S110
                 pass
         return idx
     if jsonl_path is not None and Path(jsonl_path).exists():
         idx = BM25Index.build_from_jsonl(Path(jsonl_path))
-        if pickle_path is not None:
+        if json_path is not None:
             try:
-                idx.save(Path(pickle_path))
+                idx.save(Path(json_path))
             except Exception:  # noqa: BLE001, S110
                 pass
         return idx
