@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from pathlib import Path
 
 from ingest import BasaltIngestor
@@ -9,7 +10,21 @@ def _write_checkpoint_atomic(checkpoint: Path, offset: int) -> None:
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
     tmp = checkpoint.with_suffix(checkpoint.suffix + ".tmp")
     tmp.write_text(str(offset), encoding="utf-8")
+    try:
+        with tmp.open("rb") as fh:
+            fh.flush()
+            os.fsync(fh.fileno())
+    except Exception:
+        pass
     tmp.replace(checkpoint)
+    try:
+        dir_fd = os.open(str(checkpoint.parent), os.O_DIRECTORY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except Exception:
+        pass
 
 
 def bulk_ingest(
@@ -34,7 +49,9 @@ def bulk_ingest(
         except ValueError:
             start_offset = 0
 
-    ingestor = BasaltIngestor(db_path=db_path) if db_path else BasaltIngestor()
+    ingestor = (
+        BasaltIngestor(db_path=db_path) if db_path is not None else BasaltIngestor()
+    )
 
     total_ingested = 0
 
@@ -47,24 +64,20 @@ def bulk_ingest(
             line = f.readline()
             if not line:
                 if batch_docs:
-                    pos_after = f.tell()
-                    if checkpoint is not None:
-                        _write_checkpoint_atomic(checkpoint, pos_after)
                     try:
                         ingestor.collection.upsert(
                             documents=batch_docs, ids=batch_ids, metadatas=None
                         )
                     except Exception:
-                        if checkpoint is not None:
-                            _write_checkpoint_atomic(checkpoint, pos_after)
                         raise
                     total_ingested += len(batch_docs)
                     if checkpoint is not None:
-                        _write_checkpoint_atomic(checkpoint, pos_after)
+                        _write_checkpoint_atomic(checkpoint, f.tell())
                 else:
                     if checkpoint is not None and not checkpoint.exists():
                         _write_checkpoint_atomic(checkpoint, f.tell())
                 break
+            next_offset = f.tell()
             try:
                 obj = json.loads(line.decode("utf-8"))
             except json.JSONDecodeError:
@@ -82,20 +95,15 @@ def bulk_ingest(
             batch_docs.append(abstract)
             batch_ids.append(doc_id)
             if len(batch_docs) >= batch_size:
-                pos_after = f.tell()
-                if checkpoint is not None:
-                    _write_checkpoint_atomic(checkpoint, pos_after)
                 try:
                     ingestor.collection.upsert(
                         documents=batch_docs, ids=batch_ids, metadatas=None
                     )
                 except Exception:
-                    if checkpoint is not None:
-                        _write_checkpoint_atomic(checkpoint, pos_after)
                     raise
                 total_ingested += len(batch_docs)
                 if checkpoint is not None:
-                    _write_checkpoint_atomic(checkpoint, pos_after)
+                    _write_checkpoint_atomic(checkpoint, next_offset)
                 batch_docs = []
                 batch_ids = []
 
@@ -117,7 +125,7 @@ def main() -> None:
     source = Path(args.source)
     checkpoint = (
         Path(args.checkpoint)
-        if args.checkpoint
+        if args.checkpoint is not None
         else source.with_suffix(source.suffix + ".checkpoint")
     )
     count = bulk_ingest(
