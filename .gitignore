@@ -43,3 +43,17 @@ AI.md
 # Opencode
 opencode.json
 .opencode/
+
+# Hugging Face cache
+hf-cache/
+hf_cache/
+
+# Scale report
+eval/scale_report.json
+
+# Synthetic corpora
+data/synth_*.jsonl
+tmp/
+
+# Bench Chroma
+eval/bench_*
