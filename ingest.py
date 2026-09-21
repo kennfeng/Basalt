@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Any
 
 import chromadb
@@ -81,8 +82,21 @@ class BasaltIngestor:
         self.embed_device = os.getenv("BASALT_EMBED_DEVICE", "cpu")
         self.embed_batch_size = _parse_env_int("BASALT_EMBED_BATCH_SIZE", 32) or 32
         self.client = _create_client(db_path)
+        hf_cache = os.getenv("HF_HOME") or os.getenv("SENTENCE_TRANSFORMERS_HOME")
+        emb_kwargs: dict[str, Any] = {"device": self.embed_device}
+        if hf_cache:
+            emb_kwargs["cache_folder"] = hf_cache
+        trust_remote = os.getenv("BASALT_EMBED_TRUST_REMOTE_CODE", "false").lower() in (
+            "true",
+            "1",
+            "yes",
+            "on",
+        )
+        if trust_remote:
+            emb_kwargs["trust_remote_code"] = True
         self.emb_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=resolved_model
+            model_name=resolved_model,
+            **emb_kwargs,
         )
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
@@ -137,7 +151,19 @@ class BasaltIngestor:
         if effective_batch < 1:
             raise ValueError(f"batch_size must be >= 1, got {effective_batch}")
 
-        for start in range(0, len(text_list), effective_batch):
+        total = len(text_list)
+        verbose = (
+            os.getenv("BASALT_VERBOSE", "false").lower()
+            in (
+                "true",
+                "1",
+                "yes",
+                "on",
+            )
+            or total >= 10000
+        )
+        t0 = time.perf_counter()
+        for idx, start in enumerate(range(0, total, effective_batch)):
             end = start + effective_batch
             batch_docs = text_list[start:end]
             batch_ids = ids[start:end]
@@ -147,6 +173,16 @@ class BasaltIngestor:
             self.collection.upsert(
                 documents=batch_docs, metadatas=batch_metas, ids=batch_ids
             )
+            if verbose and (idx + 1) % max(1, total // effective_batch // 10 + 1) == 0:
+                done = min(end, total)
+                pct = done * 100 // total
+                dt = time.perf_counter() - t0
+                rate = done / dt if dt > 0 else 0
+                print(f"ingest: {done}/{total} {pct}% {rate:.1f}/s", flush=True)
+        if verbose and total >= 10000:
+            dt = time.perf_counter() - t0
+            rate = total / dt if dt > 0 else 0
+            print(f"ingest: done {total} {dt:.1f}s {rate:.1f}/s", flush=True)
 
     def search(
         self,
