@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import secrets
 import uuid
@@ -12,6 +13,8 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from main import BasaltRAG
+
+logger = logging.getLogger(__name__)
 
 
 class AskRequest(BaseModel):
@@ -254,18 +257,28 @@ def create_app(rag_factory: Any = None) -> FastAPI:
                             if chunk:
                                 yield f"data: {json.dumps({'token': chunk})}\n\n"
                     except (ConnectionError, httpx.TransportError):
+                        logger.warning(
+                            "ask_stream ollama error trace_id=%s",
+                            trace_id,
+                            exc_info=True,
+                        )
                         err = json.dumps(
                             {
                                 "error": (
                                     "ERROR: Could not connect to Ollama. "
                                     "Please check that Ollama is running."
-                                )
+                                ),
+                                "trace_id": trace_id,
                             }
                         )
                         yield f"data: {err}\n\n"
                         return
-                    except Exception as exc:  # noqa: BLE001
-                        yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+                    except Exception:  # noqa: BLE001
+                        logger.exception("ask_stream error trace_id=%s", trace_id)
+                        err = json.dumps(
+                            {"error": "Internal server error", "trace_id": trace_id}
+                        )
+                        yield f"data: {err}\n\n"
                         return
                     done_payload = json.dumps(
                         {"done": True, "source_documents": source_docs}
