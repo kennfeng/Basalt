@@ -101,10 +101,23 @@ def create_app(rag_factory: Any = None) -> FastAPI:
         db_count = 0
         if db_ready:
             try:
-                from ingest import BasaltIngestor
+                import chromadb
 
-                ingestor = BasaltIngestor(db_path=db_path)
-                raw = ingestor.collection.count()
+                host = os.getenv("BASALT_CHROMA_HOST")
+                if host:
+                    port_raw = os.getenv("BASALT_CHROMA_PORT", "8000")
+                    try:
+                        port = int(port_raw) if port_raw else 8000
+                    except ValueError:
+                        port = 8000
+                    client = chromadb.HttpClient(host=host, port=port)
+                else:
+                    client = chromadb.PersistentClient(path=db_path)
+                try:
+                    col = client.get_collection(name="documents")
+                except Exception:  # noqa: BLE001
+                    col = client.get_or_create_collection(name="documents")
+                raw = col.count()
                 db_count = int(raw) if isinstance(raw, int) else 0
             except Exception:  # noqa: BLE001
                 db_count = 0
@@ -202,72 +215,75 @@ def create_app(rag_factory: Any = None) -> FastAPI:
                 headers={"X-Trace-Id": uuid.uuid4().hex[:12]},
             )
         trace_id = uuid.uuid4().hex[:12]
+        rag: Any = None
+        query = body.query[:2000]
+        pipeline: Any = None
+        prepared: dict[str, Any] | None = None
+        try:
+            rag = get_rag(request)
+            pipeline = getattr(rag, "pipeline", None)
+            if pipeline is not None and hasattr(pipeline, "_prepare"):
+                try:
+                    prepared = pipeline._prepare(query)
+                except Exception:  # noqa: BLE001
+                    prepared = {"context": "", "source_documents": []}
+        finally:
+            sem.release()
 
         def generate():  # type: ignore[no-untyped-def]
-            try:
-                rag: Any = get_rag(request)
-                query = body.query[:2000]
-                pipeline = getattr(rag, "pipeline", None)
-                if pipeline is not None and hasattr(pipeline, "_prepare"):
+            if pipeline is not None and prepared is not None:
+                if not prepared.get("source_documents"):
+                    payload = json.dumps(
+                        {
+                            "answer": (
+                                "I couldn't find any relevant documents "
+                                "in the database."
+                            ),
+                            "source_documents": [],
+                            "done": True,
+                        }
+                    )
+                    yield f"data: {payload}\n\n"
+                    return
+                context = prepared.get("context", "")
+                source_docs = prepared.get("source_documents", [])
+                chain = getattr(pipeline, "chain", None)
+                if chain is not None:
                     try:
-                        prepared = pipeline._prepare(query)
-                    except Exception:  # noqa: BLE001
-                        prepared = {"context": "", "source_documents": []}
-                    if not prepared.get("source_documents"):
-                        payload = json.dumps(
+                        for chunk in chain.stream({"context": context, "query": query}):
+                            if chunk:
+                                yield f"data: {json.dumps({'token': chunk})}\n\n"
+                    except (ConnectionError, httpx.TransportError):
+                        err = json.dumps(
                             {
-                                "answer": (
-                                    "I couldn't find any relevant documents "
-                                    "in the database."
-                                ),
-                                "source_documents": [],
-                                "done": True,
+                                "error": (
+                                    "ERROR: Could not connect to Ollama. "
+                                    "Please check that Ollama is running."
+                                )
                             }
                         )
-                        yield f"data: {payload}\n\n"
+                        yield f"data: {err}\n\n"
                         return
-                    context = prepared.get("context", "")
-                    source_docs = prepared.get("source_documents", [])
-                    chain = getattr(pipeline, "chain", None)
-                    if chain is not None:
-                        try:
-                            for chunk in chain.stream(
-                                {"context": context, "query": query}
-                            ):
-                                if chunk:
-                                    yield f"data: {json.dumps({'token': chunk})}\n\n"
-                        except (ConnectionError, httpx.TransportError):
-                            err = json.dumps(
-                                {
-                                    "error": (
-                                        "ERROR: Could not connect to Ollama. "
-                                        "Please check that Ollama is running."
-                                    )
-                                }
-                            )
-                            yield f"data: {err}\n\n"
-                            return
-                        except Exception as exc:  # noqa: BLE001
-                            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
-                            return
-                        done_payload = json.dumps(
-                            {"done": True, "source_documents": source_docs}
-                        )
-                        yield f"data: {done_payload}\n\n"
+                    except Exception as exc:  # noqa: BLE001
+                        yield f"data: {json.dumps({'error': str(exc)})}\n\n"
                         return
-                result = rag.ask(query)
-                answer = result.get("answer", "")
-                for i in range(0, len(answer), 64):
-                    yield f"data: {json.dumps({'token': answer[i : i + 64]})}\n\n"
-                final_payload = json.dumps(
-                    {
-                        "done": True,
-                        "source_documents": result.get("source_documents", []),
-                    }
-                )
-                yield f"data: {final_payload}\n\n"
-            finally:
-                sem.release()
+                    done_payload = json.dumps(
+                        {"done": True, "source_documents": source_docs}
+                    )
+                    yield f"data: {done_payload}\n\n"
+                    return
+            assert rag is not None
+            result = rag.ask(query)
+            answer = result.get("answer", "")
+            for i in range(0, len(answer), 64):
+                yield f"data: {json.dumps({'token': answer[i : i + 64]})}\n\n"
+            final_payload = json.dumps(
+                {
+                    "done": True,
+                    "source_documents": result.get("source_documents", []),
+                }
+            )
+            yield f"data: {final_payload}\n\n"
 
         return StreamingResponse(
             generate(),
