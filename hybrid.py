@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import warnings
 from pathlib import Path
@@ -80,11 +81,35 @@ class BM25Index:
             )
         try:
             if tmp.stat().st_size > 200 * 1024 * 1024:
+                sharded = os.getenv("BASALT_BM25_SHARDED", "false").lower() in (
+                    "true",
+                    "1",
+                    "yes",
+                    "on",
+                )
+                tantivy = os.getenv("BASALT_BM25_TANTIVY", "false").lower() in (
+                    "true",
+                    "1",
+                    "yes",
+                    "on",
+                )
+                if not sharded and not tantivy:
+                    try:
+                        tmp.unlink(missing_ok=True)
+                    except Exception:  # noqa: BLE001, S110
+                        pass
+                    raise RuntimeError(
+                        "bm25.json >200MB requires BASALT_BM25_SHARDED=true or "
+                        "BASALT_BM25_TANTIVY=true; shard to bm25_shard_*.json + "
+                        "bm25_manifest.json"
+                    )
                 warnings.warn(
                     "bm25.json >200MB ... consider sharded json or tantivy",
                     UserWarning,
                     stacklevel=2,
                 )
+        except RuntimeError:
+            raise
         except Exception:  # noqa: BLE001, S110
             pass
         tmp.replace(path)

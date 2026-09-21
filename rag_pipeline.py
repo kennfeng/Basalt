@@ -1,4 +1,5 @@
 import os
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -160,33 +161,71 @@ class LangChainRAG:
                             bm25_index = load_or_build_bm25(json_path=legacy_path)
                         except Exception:  # noqa: BLE001
                             bm25_index = None
-                    if bm25_index is None and sample_jsonl.exists():
-                        bm25_index = load_or_build_bm25(
-                            jsonl_path=sample_jsonl, json_path=bm25_path
-                        )
                     if bm25_index is None:
+                        db_count = 0
                         try:
-                            corpus_ids: list[str] = []
-                            corpus_texts: list[str] = []
+                            db_count = int(ingestor.collection.count())
+                        except Exception:  # noqa: BLE001, S110
+                            db_count = 0
+                        if sample_jsonl.exists() and db_count <= 1000:
                             try:
-                                all_docs = ingestor.collection.get(
-                                    include=["documents"]
-                                )
-                                ids = all_docs.get("ids", [])
-                                docs = all_docs.get("documents", [])
-                                if ids and docs:
-                                    corpus_ids = list(ids)
-                                    corpus_texts = list(docs)
-                            except Exception:  # noqa: BLE001, S110
-                                pass
-                            if corpus_ids and corpus_texts:
                                 bm25_index = load_or_build_bm25(
-                                    corpus_ids=corpus_ids,
-                                    corpus_texts=corpus_texts,
-                                    json_path=bm25_path,
+                                    jsonl_path=sample_jsonl, json_path=bm25_path
                                 )
-                        except Exception:  # noqa: BLE001
-                            bm25_index = None
+                            except Exception:  # noqa: BLE001
+                                bm25_index = None
+                        if bm25_index is None:
+                            try:
+                                corpus_ids: list[str] = []
+                                corpus_texts: list[str] = []
+                                offset = 0
+                                limit = 10000
+                                while True:
+                                    try:
+                                        batch = ingestor.collection.get(
+                                            limit=limit,
+                                            offset=offset,
+                                            include=["documents", "ids"],
+                                        )
+                                    except TypeError:
+                                        try:
+                                            fb = ingestor.collection.get(
+                                                include=["documents", "ids"]
+                                            )
+                                            ids = fb.get("ids", [])
+                                            docs = fb.get("documents", [])
+                                            if ids and docs:
+                                                corpus_ids = list(ids)
+                                                corpus_texts = list(docs)
+                                        except Exception:  # noqa: BLE001, S110
+                                            pass
+                                        break
+                                    except Exception:  # noqa: BLE001, S110
+                                        break
+                                    ids = batch.get("ids", [])
+                                    docs = batch.get("documents", [])
+                                    if not ids or not docs:
+                                        break
+                                    corpus_ids.extend(list(ids))
+                                    corpus_texts.extend(list(docs))
+                                    if len(ids) < limit:
+                                        break
+                                    offset += limit
+                                if corpus_ids and corpus_texts:
+                                    bm25_index = load_or_build_bm25(
+                                        corpus_ids=corpus_ids,
+                                        corpus_texts=corpus_texts,
+                                        json_path=bm25_path,
+                                    )
+                            except Exception:  # noqa: BLE001
+                                bm25_index = None
+                            if bm25_index is None and db_count > 1000:
+                                warnings.warn(
+                                    "BM25 disabled for large collection "
+                                    "without sharded backend; using dense-only",
+                                    UserWarning,
+                                    stacklevel=2,
+                                )
                 if bm25_index is not None:
                     hybrid_retriever = HybridRetriever(
                         ingestor=ingestor,
