@@ -138,6 +138,22 @@ def _thresholds_config() -> dict[str, dict[str, float]]:
     }
 
 
+def _preflight_memory(n: int) -> None:
+    try:
+        import psutil
+
+        avail = int(psutil.virtual_memory().available)
+    except Exception:  # noqa: BLE001
+        return
+    thr = _threshold_for_n(n)
+    if avail < thr["rss"]:
+        warnings.warn(
+            f"available memory {avail} below threshold {int(thr['rss'])} for n={n}",
+            UserWarning,
+            stacklevel=2,
+        )
+
+
 def bench(
     corpus: Path,
     output: Path,
@@ -156,11 +172,14 @@ def bench(
             raise ValueError(f"n must be >= 1, got {n}")
         subset = all_objs[:n]
         if real:
+            hf_home = os.getenv("HF_HOME")
+            st_home = os.getenv("SENTENCE_TRANSFORMERS_HOME")
+            if hf_home is None and st_home is None:
+                os.environ["HF_HOME"] = "./hf-cache"
+            _preflight_memory(n)
             tmp_db: Path | None = None
             temp_created = False
             try:
-                from ingest import BasaltIngestor
-
                 if db_path is not None:
                     tmp_db = Path(db_path)
                     tmp_db.mkdir(parents=True, exist_ok=True)
@@ -186,10 +205,18 @@ def bench(
                     texts.append(raw)
                     did = str(obj.get("id") or obj.get("doc_id") or f"doc_{len(ids)}")
                     ids.append(did)
+                gc.collect()
+                print(f"bench: loading model n={n}...", flush=True)
                 start = time.perf_counter()
+                from ingest import BasaltIngestor
+
                 ingestor = BasaltIngestor(db_path=str(tmp_db))
-                ingestor.add_documents(text_list=texts, ids=ids, batch_size=512)
+                bsize = int(os.getenv("BASALT_BATCH_SIZE", "512"))
+                print(f"bench: ingesting {n} docs batch {bsize}...", flush=True)
+                ingestor.add_documents(text_list=texts, ids=ids, batch_size=bsize)
                 elapsed = time.perf_counter() - start
+                rate = n / elapsed if elapsed > 0 else float(n)
+                print(f"bench: done {n} {elapsed:.1f}s {rate:.1f}/s", flush=True)
                 docs_per_sec = n / elapsed if elapsed > 0 else float(n)
                 gc.collect()
                 rss_bytes = _get_rss_bytes()
