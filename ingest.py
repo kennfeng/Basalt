@@ -65,17 +65,24 @@ class BasaltIngestor:
     def __init__(
         self,
         db_path: str = "./basalt_db",
-        embedding_model_name: str = "all-MiniLM-L6-v2",
+        embedding_model_name: str | None = None,
         collection_name: str = "documents",
     ) -> None:
+        resolved_model = embedding_model_name
+        if resolved_model is None:
+            env_model = os.getenv("BASALT_EMBED_MODEL")
+            if env_model is not None and env_model != "":
+                resolved_model = env_model
+            else:
+                resolved_model = "all-MiniLM-L6-v2"
         self.db_path = db_path
-        self.embedding_model_name = embedding_model_name
+        self.embedding_model_name = resolved_model
         self.collection_name = collection_name
         self.embed_device = os.getenv("BASALT_EMBED_DEVICE", "cpu")
         self.embed_batch_size = _parse_env_int("BASALT_EMBED_BATCH_SIZE", 32) or 32
         self.client = _create_client(db_path)
         self.emb_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=embedding_model_name
+            model_name=resolved_model
         )
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
@@ -179,10 +186,18 @@ def ensure_seeded(
         return False
     if ingestor is None:
         ingestor = BasaltIngestor(db_path=db_path)
-    if ingestor.collection.count() == 0:
+    count = ingestor.collection.count()
+    if count == 0:
         ingestor.add_documents(text_list=texts, ids=ids)
         return True
     if ids is not None:
+        if count > 0:
+            allow = os.getenv("BASALT_ALLOW_SEED_WIPE", "false").lower()
+            if allow not in ("true", "1", "yes", "on"):
+                raise RuntimeError(
+                    "ensure_seeded destructive wipe requires "
+                    "BASALT_ALLOW_SEED_WIPE=true"
+                )
         existing_ids = ingestor.collection.get()["ids"]
         if existing_ids:
             ingestor.collection.delete(ids=existing_ids)
