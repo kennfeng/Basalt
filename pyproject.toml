@@ -2,7 +2,7 @@
 name = "basalt-rag"
 version = "0.1.0"
 description = "Basalt: hybrid BM25+dense retrieval, cross-encoder re-ranking, Ollama/Gemini generation"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 
 [build-system]
