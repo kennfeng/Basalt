@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import statistics
+import sys
 import tempfile
 import time
 import warnings
@@ -69,6 +70,74 @@ def _measure_real_latencies(
     return latencies
 
 
+def _threshold_for_n(n: int) -> dict[str, float]:
+    if n <= 10000:
+        return {
+            "p95": 250.0,
+            "p50": 150.0,
+            "rss": 1.2 * 1024 * 1024 * 1024,
+            "disk": 1.2 * 1024 * 1024 * 1024,
+        }
+    if n <= 100000:
+        return {
+            "p95": 500.0,
+            "p50": 300.0,
+            "rss": 2.5 * 1024 * 1024 * 1024,
+            "disk": 3.0 * 1024 * 1024 * 1024,
+        }
+    return {
+        "p95": 800.0,
+        "p50": 500.0,
+        "rss": 6.0 * 1024 * 1024 * 1024,
+        "disk": 8.0 * 1024 * 1024 * 1024,
+    }
+
+
+def _evaluate_slo(
+    n: int, p50: float, p95: float, rss: int, disk: int
+) -> tuple[bool, str]:
+    thr = _threshold_for_n(n)
+    reasons: list[str] = []
+    ok = True
+    if p95 > thr["p95"]:
+        ok = False
+        reasons.append(f"p95 {p95:.1f}>{thr['p95']:.0f}")
+    if p50 > thr["p50"]:
+        ok = False
+        reasons.append(f"p50 {p50:.1f}>{thr['p50']:.0f}")
+    if rss > thr["rss"]:
+        ok = False
+        reasons.append(f"rss {rss}>{int(thr['rss'])}")
+    if disk > thr["disk"]:
+        ok = False
+        reasons.append(f"disk {disk}>{int(thr['disk'])}")
+    reason = "; ".join(reasons) if reasons else "pass"
+    return ok, reason
+
+
+def _thresholds_config() -> dict[str, dict[str, float]]:
+    return {
+        "10k": {
+            "p95_ms": 250.0,
+            "p50_ms": 150.0,
+            "rss_bytes": 1.2 * 1024 * 1024 * 1024,
+            "disk_bytes": 1.2 * 1024 * 1024 * 1024,
+        },
+        "100k": {
+            "p95_ms": 500.0,
+            "p50_ms": 300.0,
+            "rss_bytes": 2.5 * 1024 * 1024 * 1024,
+            "disk_bytes": 3.0 * 1024 * 1024 * 1024,
+        },
+        "1M": {
+            "p95_ms": 800.0,
+            "p50_ms": 500.0,
+            "rss_bytes": 6.0 * 1024 * 1024 * 1024,
+            "disk_bytes": 8.0 * 1024 * 1024 * 1024,
+        },
+    }
+
+
 def bench(
     corpus: Path,
     output: Path,
@@ -77,16 +146,6 @@ def bench(
     real: bool = False,
     db_path: Path | str | None = None,
 ) -> dict[str, Any]:
-    """Benchmark ingest throughput and retrieval latency.
-
-    Stub mode (default) measures file-write throughput and fake sleep
-    latency. It emits a warning and sets config.mode to stub so results
-    are not mistaken for Chroma HNSW measurements.
-
-    Real mode (real=True) uses BasaltIngestor on a temporary Chroma
-    directory, times real add_documents, collects RSS after gc, sums
-    disk usage, and measures latency via collection.query.
-    """
     if not corpus.exists():
         raise FileNotFoundError(f"corpus not found: {corpus}")
     all_lines = corpus.read_text(encoding="utf-8").strip().splitlines()
@@ -139,6 +198,7 @@ def bench(
                 p50 = statistics.median(latencies) if latencies else 0.0
                 p95 = latencies[int(len(latencies) * 0.95)] if latencies else 0.0
                 p99 = latencies[int(len(latencies) * 0.99)] if latencies else 0.0
+                slo_pass, slo_reason = _evaluate_slo(n, p50, p95, rss_bytes, disk_bytes)
                 results.append(
                     {
                         "n": n,
@@ -149,6 +209,8 @@ def bench(
                         "p95_ms": float(p95),
                         "p99_ms": float(p99),
                         "retrieve_n": int(retrieve_n),
+                        "slo_pass": bool(slo_pass),
+                        "slo_reason": str(slo_reason),
                     }
                 )
                 if temp_created and tmp_db is not None:
@@ -157,16 +219,13 @@ def bench(
                     except Exception:  # noqa: BLE001
                         pass
                 continue
-            except Exception as exc:  # noqa: BLE001
-                warnings.warn(
-                    f"real bench failed ({exc}); falling back to stub",
-                    stacklevel=2,
-                )
+            except Exception:
                 if temp_created and tmp_db is not None:
                     try:
                         shutil.rmtree(tmp_db)
                     except Exception:  # noqa: BLE001
                         pass
+                raise
         docs_per_sec = 0.0
         disk_bytes = 0
         rss_bytes = _get_rss_bytes()
@@ -195,6 +254,7 @@ def bench(
         p50 = statistics.median(latencies) if latencies else 0.0
         p95 = latencies[int(len(latencies) * 0.95)] if latencies else 0.0
         p99 = latencies[int(len(latencies) * 0.99)] if latencies else 0.0
+        slo_pass, slo_reason = _evaluate_slo(n, p50, p95, rss_bytes, disk_bytes)
         results.append(
             {
                 "n": n,
@@ -205,16 +265,21 @@ def bench(
                 "p95_ms": float(p95),
                 "p99_ms": float(p99),
                 "retrieve_n": int(retrieve_n),
+                "slo_pass": bool(slo_pass),
+                "slo_reason": str(slo_reason),
             }
         )
     mode = "real" if real else "stub"
+    overall = all(r.get("slo_pass", False) for r in results) if results else True
     data: dict[str, Any] = {
         "config": {
             "n_values": n_values,
             "retrieve_n": retrieve_n,
             "mode": mode,
+            "thresholds": _thresholds_config(),
         },
         "results": results,
+        "overall_slo_pass": bool(overall),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8") as f:
@@ -235,14 +300,38 @@ def main() -> None:
     output = Path(args.output)
     n_values = [int(x.strip()) for x in args.n_values.split(",") if x.strip()]
     db_path = Path(args.db_path) if args.db_path is not None else None
-    bench(
-        corpus=corpus,
-        output=output,
-        n_values=n_values,
-        retrieve_n=args.retrieve_n,
-        real=args.real,
-        db_path=db_path,
-    )
+    try:
+        bench(
+            corpus=corpus,
+            output=output,
+            n_values=n_values,
+            retrieve_n=args.retrieve_n,
+            real=args.real,
+            db_path=db_path,
+        )
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        try:
+            err_data: dict[str, Any] = {
+                "config": {
+                    "n_values": n_values,
+                    "retrieve_n": args.retrieve_n,
+                    "mode": "error",
+                    "thresholds": _thresholds_config(),
+                },
+                "results": [],
+                "overall_slo_pass": False,
+                "error": str(exc),
+            }
+            if not output.exists():
+                output.parent.mkdir(parents=True, exist_ok=True)
+                with output.open("w", encoding="utf-8") as f:
+                    json.dump(err_data, f, indent=2)
+        except Exception:  # noqa: BLE001, S110
+            pass
+        print(f"bench failed: {exc}", file=sys.stderr)
+        sys.exit(2)
     print(f"Wrote report to {output}")
 
 
