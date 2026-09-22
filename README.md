@@ -2,7 +2,7 @@
 
 Research copilot over arXiv abstracts. Local two-stage **Retrieval-Augmented Generation (RAG)** with **Hybrid Retrieval** and **Cross-Encoder Re-ranking** — no data leaves your machine.
 
-Retrieves with dense embeddings + **BM25** (**Reciprocal Rank Fusion**), re-ranks with a **Cross-Encoder**, generates grounded answers with **LLM** (Ollama or Gemini). Built with **Python**, **FastAPI** (**REST API**), **Vector Database** **ChromaDB** **HNSW**, **Sentence-Transformers**, **PyTorch**, **LangChain**, **Docker** / **Docker Compose**, **CI/CD**, **Pytest**, **Evaluation** (**MRR**, **Latency**, **SSE**, **Observability**).
+Retrieves with dense embeddings + **BM25** (**Reciprocal Rank Fusion**), re-ranks with a **Cross-Encoder**, generates grounded answers with an **LLM** (Ollama or Gemini). Built with **Python**, **FastAPI**, **ChromaDB**, **Sentence-Transformers**, **LangChain**, **Docker**.
 
 ```
 Query → [Hybrid: dense (MiniLM) + sparse (BM25) → RRF k=60 → top 20]
@@ -18,16 +18,16 @@ Static SPA served at `/ui`
 docker compose up --build -d && open http://localhost:8001/ui/
 ```
 
-**Screens:** Ask (1–2000 chars → answer + 3 source cards with scores, copy citation, latency + X-Trace-Id) · Inspect (dense HNSW vs sparse BM25 vs fused top 20 vs reranked top 3, p50/p90 badge) · Corpus (250 abstracts filterable) · Eval (Hit@3 / MRR / latency sparkline from `eval/results.json`). Streaming via `POST /ask/stream` (**SSE**, `text/event-stream`).
+**Screens:** Ask (answer + source cards) · Inspect (retrieval trace) · Corpus (250 abstracts) · Eval (Hit@3 / MRR / latency). Streaming via `POST /ask/stream`.
 
 ## Features
 
-- **Hybrid Retrieval — BM25 + Dense + RRF** — `rank-bm25` + **ChromaDB** **HNSW** (**Vector Database**, **ANN**) fused by **Reciprocal Rank Fusion** (`hybrid.py:RRF k=60`); rescues lexical IDs that dense alone misses.
-- **Cross-Encoder Re-ranking** — `BAAI/bge-reranker-base` (`Sentence-Transformers`, **PyTorch**, **Re-ranking**) puts correct abstract at rank 1 in 7/15 more queries: **MRR 0.467 → 0.733 (+57%)** at `k=3`.
-- **Grounded generation** — context-only system prompt; answers cite re-ranked abstracts; **LangChain** `ChatPromptTemplate | LLM | StrOutputParser`.
-- **Local by default, swappable** — embedded Chroma **HNSW** (`BASALT_HNSW_*` tunable to 1M × 384d ~4–6 GB RSS), `BASALT_PROVIDER=ollama|openai` via `create_llm`.
-- **FastAPI REST API + Observability** — `GET /health` (200/503, `X-Trace-Id`, `db_count`, `hybrid_enabled`, `rrf_k`, `hnsw_config`, `bm25_ready`), `POST /ask` (401 `X-API-Key`, 503 Semaphore `BASALT_MAX_CONCURRENCY`/`BASALT_ASK_TIMEOUT`), `POST /ask/stream` (**SSE** streaming), static `GET /ui/` + `GET /` → `/ui/`. OpenAPI at `/docs`.
-- **Evaluated** — 15 queries over 46 docs (15 hard negatives); +57% **MRR** from re-ranking at ~34× latency cost (see Evaluation).
+- **Hybrid Retrieval — BM25 + Dense + RRF** — sparse + dense fused by **Reciprocal Rank Fusion**.
+- **Cross-Encoder Re-ranking** — `BAAI/bge-reranker-base`: **MRR 0.467 → 0.733 (+57%)** at `k=3`.
+- **Grounded generation** — answers cite re-ranked abstracts only.
+- **Local by default, swappable** — embedded Chroma, `BASALT_PROVIDER=ollama|openai`.
+- **FastAPI + Observability** — `GET /health`, `POST /ask`, `POST /ask/stream` (**SSE**), `GET /scale_report`, `GET /ui/`. `X-Trace-Id` on every response. OpenAPI at `/docs`.
+- **Evaluated** — 15 queries over 46 docs (see Evaluation).
 
 ## Getting Started
 
@@ -47,20 +47,14 @@ ollama pull llama3.2:1b
 
 ### Run — research copilot over 250 arXiv abstracts (Docker)
 
-The repo ships `data/sample.jsonl` (250 abstracts, `cs.AI`/`cs.CL`/`cs.IR`/`cs.CV`/`cs.LG`) and a 9-doc fallback (`sample_data.py`). All runs via Docker on `:8001`.
+The repo ships `data/sample.jsonl` (250 abstracts). All runs via Docker on `:8001`.
 
 ```bash
 docker compose up --build -d
-# BM25 index built on first query (to /data/basalt_db/bm25.json)
-# Try: What is cross-encoder re-ranking for scientific literature?
-#      How does hybrid retrieval improve recall?
-#      What is the latency tradeoff between vector search and re-ranking?
 open http://localhost:8001/ui/
 ```
 
-Ingest via container: `docker compose exec basalt-api python -m scripts.bulk_ingest --source data/sample.jsonl --batch-size 512`
-
-### HTTP API (REST API) — Docker (`:8001`)
+### HTTP API — Docker (`:8001`)
 
 ```bash
 docker compose up --build -d
@@ -74,14 +68,15 @@ open http://localhost:8001/ui/
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | `{"status":"ok"\|"degraded","pipeline_initialized","db_ready","ollama_reachable","db_count","hybrid_enabled","bm25_ready","rrf_k","hybrid_config","hnsw_config","models","retrieval_pipeline","vector_db"}` — 200 or 503 + `X-Trace-Id`. No model load. |
-| `POST` | `/ask` | `{"query":"..."}` (1–2000 chars) → `{"answer","source_documents":[{"id","document","score"}]}`. 401 if `BASALT_API_KEY` set, 503 if busy. `X-Trace-Id`. |
-| `POST` | `/ask/stream` | **SSE** `text/event-stream` — `data: {"token":"..."}` chunks + final `data: {"done":true,"source_documents":[...]}`. Same auth/concurrency as `/ask`. |
-| `GET` | `/ui/` | Static SPA (HTML/JS/CSS, no bundler). |
+| `GET` | `/health` | Status, `db_count`, readiness — 200 or 503. |
+| `POST` | `/ask` | `{"query":"..."}` (1–2000 chars) → `{"answer","source_documents"}`. |
+| `POST` | `/ask/stream` | Streaming answer (**SSE**) + final `source_documents`. |
+| `GET` | `/scale_report` | Benchmark results. |
+| `GET` | `/ui/` | Static SPA. |
 | `GET` | `/` | `302` → `/ui/` |
-| `GET` | `/docs` | OpenAPI (FastAPI auto). |
+| `GET` | `/docs` | OpenAPI. |
 
-Health is `ok` when the DB directory exists and Ollama is reachable; the collection is seeded idempotently on first `BasaltRAG` init.
+Health is `ok` when the DB directory exists and Ollama is reachable.
 
 ## Configuration
 
@@ -98,12 +93,11 @@ Health is `ok` when the DB directory exists and Ollama is reachable; the collect
 | `BASALT_TOP_N` | `3` | Docs returned to LLM (capped at 20) |
 | `BASALT_HYBRID` | `true` | `false` disables BM25+RRF |
 | `BASALT_HYBRID_DENSE_N` / `SPARSE_N` / `RRF_K` / `TOP_N` | `50` / `50` / `60` / `20` | Hybrid RRF tuning |
-| `BASALT_HNSW_M` / `CONSTRUCTION_EF` / `SEARCH_EF` | `16` / `200` / `10` | HNSW index tuning |
-| `BASALT_BATCH_SIZE` | `512` | `upsert` batch size |
-| `BASALT_EMBED_DEVICE` / `EMBED_BATCH_SIZE` | `cpu` / `32` | Embedding device + batch |
-| `BASALT_RERANKER_DEVICE` / `BATCH_SIZE` / `FP16` | `cpu` / `32` / `false` | Reranker accel |
-| `BASALT_MAX_CONCURRENCY` / `ASK_TIMEOUT` | `4` / `30` | API semaphore + timeout |
-| `BASALT_AUTO_SEED` | `true` | `false` disables seeding empty DB |
+| `BASALT_HNSW_M` / `CONSTRUCTION_EF` / `SEARCH_EF` | `16` / `200` / `10` | HNSW tuning |
+| `BASALT_BATCH_SIZE` | `512` | Ingest batch size |
+| `BASALT_EMBED_MODEL` | `all-MiniLM-L6-v2` | Embedding model |
+| `BASALT_MAX_CONCURRENCY` / `ASK_TIMEOUT` | `4` / `30` | API concurrency + timeout |
+| `BASALT_AUTO_SEED` | `true` | Seed empty DB on first run |
 | `BASALT_API_KEY` | unset | If set, requires `X-API-Key` header |
 | `BASALT_CHROMA_HOST` / `PORT` | unset | If set, use `HttpClient` instead of embedded |
 
@@ -117,24 +111,29 @@ python eval/run_eval.py --yes --keep-db       # keep DB for generation eval
 python eval/run_generation_eval.py --db-path eval/eval_db  # requires Ollama
 ```
 
-Dataset: `eval/eval_dataset.json` — 46 docs (31 ground-truth + 15 hard negatives) × 15 queries. Warm-up query excluded from timing. `eval/results.json` is committed and frozen.
+Dataset: `eval/eval_dataset.json` — 46 docs × 15 queries.
 
 | Metric | Retrieval only | Retrieval + re-rank |
 |---|---|---|
 | Hit Rate @3 | 100% | 100% |
 | MRR @3 | 0.467 | **0.733 (+57%)** |
-| Latency (mean, CPU) | ~55 ms | ~1.87 s (p50 1.85 s, p90 2.02 s) |
+| Latency (mean, CPU) | ~55 ms | ~1.87 s |
 
-Re-ranking puts the correct abstract at rank 1 in 7/15 more queries, at ~34× latency cost (batch 32, `bge-reranker-base`). Use `EvalReporter` (`eval/analyzer.py`) and `GenerationReporter` (`eval/generation_analyzer.py`) for per-query, percentile, and `compare()` analysis.
+## Scale
+
+```bash
+python -m scripts.bench_scale --corpus data/synth_10k.jsonl --output eval/scale_report.json --n-values 10000,100000 --real
+curl http://localhost:8001/scale_report
+```
 
 ## Testing & CI/CD
 
 ```bash
-python -m pytest tests/ -q   # 219 tests, mocked torch/chromadb/sentence-transformers — no GPU or downloads
+python -m pytest tests/ -q
 ruff check --fix . && ruff format .
 ```
 
-CI runs `ruff check` / `ruff format --check` / `pytest` on every push (see `.github/workflows/`). Pre-commit mirrors CI locally: `pre-commit run --all-files`.
+CI runs `ruff check` / `ruff format --check` / `pytest` on every push.
 
 ## Deployment — Docker only
 
@@ -143,34 +142,25 @@ cp .env.example .env
 docker compose up --build -d          # app :8001, ollama :11434
 ```
 
-Image pre-pulls HF models (`all-MiniLM-L6-v2`, `bge-reranker`) and seeds `BASALT_DB_PATH` at boot via `scripts/entrypoint.sh:1`. Models load lazily on first `/ask`. For GPU: `docker build -f Dockerfile.gpu -t basalt-api-gpu .` and uncomment `deploy.resources` in `docker-compose.yml` (`--gpus all`).
+Image pre-pulls the models and seeds `BASALT_DB_PATH` at boot. Models load lazily on first `/ask`.
 
-UI is served from the same image (`ui/` → `/ui/`), no Node at runtime. Future **TypeScript** + **Vite** build (`ui/dist`) replaces `ui/` without backend changes. Local-only — no PaaS or tunnel required.
+UI is served from the same image (`ui/` → `/ui/`), no Node at runtime.
 
 ## Project Structure
 
 ```
 .
-├── main.py                 # BasaltRAG CLI
-├── app.py                  # FastAPI /health, /ask, /ask/stream, /ui
-├── ingest.py               # BasaltIngestor (batched upsert, HNSW, chunking)
-├── hybrid.py               # BM25Index + HybridRetriever (RRF)
-├── reranker.py             # BasaltReRanker
-├── rag_pipeline.py         # LangChainRAG (hybrid → rerank → LLM)
-├── langchain_adapters.py   # create_llm + adapters
-├── sample_data.py          # 9-doc fallback corpus
-├── data/sample.jsonl       # 250 arXiv abstracts (demo corpus)
-├── ui/
-│   ├── index.html          # static SPA, no bundler
-│   ├── app.js              # fetch /health, /ask, /ask/stream (SSE)
-│   └── styles.css
-├── eval/
-│   ├── eval_dataset.json   # 46 docs × 15 queries
-│   ├── results.json        # frozen retrieval results
-│   └── analyzer.py         # EvalReporter
-├── scripts/
-│   ├── bulk_ingest.py      # JSONL → Chroma (checkpointed)
-│   ├── fetch_arxiv.py      # arXiv bulk fetch
-│   └── bench_scale.py      # scale harness
+├── main.py                 # CLI
+├── app.py                  # FastAPI service
+├── ingest.py               # ingestion
+├── hybrid.py               # hybrid retrieval
+├── reranker.py             # re-ranking
+├── rag_pipeline.py         # RAG pipeline
+├── langchain_adapters.py   # LLM adapters
+├── sample_data.py          # fallback corpus
+├── data/sample.jsonl       # 250 arXiv abstracts
+├── ui/                     # static SPA
+├── eval/                   # evaluation harness
+├── scripts/                # ingest / fetch / bench
 └── tests/
 ```
