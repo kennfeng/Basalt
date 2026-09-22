@@ -16,6 +16,10 @@ from main import BasaltRAG
 logger = logging.getLogger(__name__)
 
 
+def _new_trace_id() -> str:
+    return secrets.token_hex(6)
+
+
 class AskRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
 
@@ -95,6 +99,7 @@ def create_app(rag_factory: Any = None) -> FastAPI:
 
     @app.get("/health")
     def health() -> JSONResponse:
+        trace_id = _new_trace_id()
         db_path = os.environ.get("BASALT_DB_PATH", "./basalt_db")
         base_url = os.environ.get("BASALT_BASE_URL")
         db_ready = check_db(db_path)
@@ -115,10 +120,7 @@ def create_app(rag_factory: Any = None) -> FastAPI:
                     client = chromadb.HttpClient(host=host, port=port)
                 else:
                     client = chromadb.PersistentClient(path=db_path)
-                try:
-                    col = client.get_collection(name="documents")
-                except Exception:  # noqa: BLE001
-                    col = client.get_or_create_collection(name="documents")
+                col = client.get_collection(name="documents")
                 raw = col.count()
                 db_count = int(raw) if isinstance(raw, int) else 0
             except Exception:  # noqa: BLE001
@@ -170,10 +172,16 @@ def create_app(rag_factory: Any = None) -> FastAPI:
                 "Hybrid BM25+dense RRF (k=60) -> Cross-Encoder bge-reranker -> LLM"
             ),
             "vector_db": "ChromaDB HNSW",
+            "trace_id": trace_id,
         }
         return JSONResponse(
             content=content,
             status_code=200 if status == "ok" else 503,
+            headers={
+                "X-Trace-Id": trace_id,
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "no-cache",
+            },
         )
 
     @app.post("/ask")
@@ -182,6 +190,7 @@ def create_app(rag_factory: Any = None) -> FastAPI:
         request: Request,
         _auth: None = Depends(verify_api_key),
     ) -> Any:
+        trace_id = _new_trace_id()
         sem: Semaphore = request.app.state.semaphore
         timeout: float = request.app.state.ask_timeout
         acquired = sem.acquire(timeout=timeout)
@@ -189,11 +198,34 @@ def create_app(rag_factory: Any = None) -> FastAPI:
             return JSONResponse(
                 content={"detail": "Server busy, try again later"},
                 status_code=503,
+                headers={
+                    "X-Trace-Id": trace_id,
+                    "X-Content-Type-Options": "nosniff",
+                },
             )
         try:
             rag = get_rag(request)
             result = rag.ask(body.query)
-            return JSONResponse(content=result)
+            return JSONResponse(
+                content=result,
+                headers={
+                    "X-Trace-Id": trace_id,
+                    "X-Content-Type-Options": "nosniff",
+                },
+            )
+        except Exception:
+            logger.exception("ask error trace_id=%s", trace_id)
+            return JSONResponse(
+                content={
+                    "detail": "Internal server error",
+                    "trace_id": trace_id,
+                },
+                status_code=500,
+                headers={
+                    "X-Trace-Id": trace_id,
+                    "X-Content-Type-Options": "nosniff",
+                },
+            )
         finally:
             sem.release()
 
@@ -203,6 +235,7 @@ def create_app(rag_factory: Any = None) -> FastAPI:
         request: Request,
         _auth: None = Depends(verify_api_key),
     ) -> Any:
+        trace_id = _new_trace_id()
         sem: Semaphore = request.app.state.semaphore
         timeout: float = request.app.state.ask_timeout
         acquired = sem.acquire(timeout=timeout)
@@ -210,6 +243,10 @@ def create_app(rag_factory: Any = None) -> FastAPI:
             return JSONResponse(
                 content={"detail": "Server busy, try again later"},
                 status_code=503,
+                headers={
+                    "X-Trace-Id": trace_id,
+                    "X-Content-Type-Options": "nosniff",
+                },
             )
         rag: Any = None
         query = body.query[:2000]
@@ -237,6 +274,7 @@ def create_app(rag_factory: Any = None) -> FastAPI:
                             ),
                             "source_documents": [],
                             "done": True,
+                            "trace_id": trace_id,
                         }
                     )
                     yield f"data: {payload}\n\n"
@@ -251,7 +289,9 @@ def create_app(rag_factory: Any = None) -> FastAPI:
                                 yield f"data: {json.dumps({'token': chunk})}\n\n"
                     except (ConnectionError, httpx.TransportError):
                         logger.warning(
-                            "ask_stream ollama connection error", exc_info=True
+                            "ask_stream ollama connection error trace_id=%s",
+                            trace_id,
+                            exc_info=True,
                         )
                         err = json.dumps(
                             {
@@ -259,22 +299,57 @@ def create_app(rag_factory: Any = None) -> FastAPI:
                                     "ERROR: Could not connect to Ollama. "
                                     "Please check that Ollama is running."
                                 ),
+                                "trace_id": trace_id,
                             }
                         )
                         yield f"data: {err}\n\n"
                         return
                     except Exception:  # noqa: BLE001
-                        logger.exception("ask_stream error")
-                        err = json.dumps({"error": "Internal server error"})
+                        logger.exception("ask_stream error trace_id=%s", trace_id)
+                        err = json.dumps(
+                            {
+                                "error": "Internal server error",
+                                "trace_id": trace_id,
+                            }
+                        )
                         yield f"data: {err}\n\n"
                         return
                     done_payload = json.dumps(
-                        {"done": True, "source_documents": source_docs}
+                        {
+                            "done": True,
+                            "source_documents": source_docs,
+                            "trace_id": trace_id,
+                        }
                     )
                     yield f"data: {done_payload}\n\n"
                     return
             assert rag is not None
-            result = rag.ask(query)
+            try:
+                result = rag.ask(query)
+            except (ConnectionError, httpx.TransportError):
+                logger.warning(
+                    "ask_stream ollama connection error trace_id=%s",
+                    trace_id,
+                    exc_info=True,
+                )
+                err = json.dumps(
+                    {
+                        "error": (
+                            "ERROR: Could not connect to Ollama. "
+                            "Please check that Ollama is running."
+                        ),
+                        "trace_id": trace_id,
+                    }
+                )
+                yield f"data: {err}\n\n"
+                return
+            except Exception:  # noqa: BLE001
+                logger.exception("ask_stream error trace_id=%s", trace_id)
+                err = json.dumps(
+                    {"error": "Internal server error", "trace_id": trace_id}
+                )
+                yield f"data: {err}\n\n"
+                return
             answer = result.get("answer", "")
             for i in range(0, len(answer), 64):
                 yield f"data: {json.dumps({'token': answer[i : i + 64]})}\n\n"
@@ -282,6 +357,7 @@ def create_app(rag_factory: Any = None) -> FastAPI:
                 {
                     "done": True,
                     "source_documents": result.get("source_documents", []),
+                    "trace_id": trace_id,
                 }
             )
             yield f"data: {final_payload}\n\n"
@@ -293,11 +369,13 @@ def create_app(rag_factory: Any = None) -> FastAPI:
                 "Cache-Control": "no-cache",
                 "X-Accel-Buffering": "no",
                 "X-Content-Type-Options": "nosniff",
+                "X-Trace-Id": trace_id,
             },
         )
 
     @app.get("/scale_report")
     def scale_report() -> JSONResponse:
+        trace_id = _new_trace_id()
         report_path = Path("eval/scale_report.json")
         if not report_path.exists():
             return JSONResponse(
@@ -308,6 +386,7 @@ def create_app(rag_factory: Any = None) -> FastAPI:
                 },
                 status_code=404,
                 headers={
+                    "X-Trace-Id": trace_id,
                     "X-Content-Type-Options": "nosniff",
                     "Cache-Control": "no-cache",
                 },
@@ -316,26 +395,31 @@ def create_app(rag_factory: Any = None) -> FastAPI:
             text = report_path.read_text(encoding="utf-8")
             data = json.loads(text)
         except json.JSONDecodeError:
-            logger.warning("scale_report invalid json", exc_info=True)
+            logger.warning(
+                "scale_report invalid json trace_id=%s", trace_id, exc_info=True
+            )
             return JSONResponse(
                 content={"detail": "Invalid scale report"},
                 status_code=500,
                 headers={
+                    "X-Trace-Id": trace_id,
                     "X-Content-Type-Options": "nosniff",
                 },
             )
         except Exception:  # noqa: BLE001
-            logger.exception("scale_report error")
+            logger.exception("scale_report error trace_id=%s", trace_id)
             return JSONResponse(
                 content={"detail": "Internal server error"},
                 status_code=500,
                 headers={
+                    "X-Trace-Id": trace_id,
                     "X-Content-Type-Options": "nosniff",
                 },
             )
         return JSONResponse(
             content=data,
             headers={
+                "X-Trace-Id": trace_id,
                 "X-Content-Type-Options": "nosniff",
                 "Cache-Control": "no-cache",
             },

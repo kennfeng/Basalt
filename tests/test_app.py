@@ -29,6 +29,8 @@ def test_health_ok_when_all_ready(monkeypatch):
     assert body["pipeline_initialized"] is False
     assert body["db_ready"] is True
     assert body["ollama_reachable"] is True
+    assert resp.headers.get("X-Trace-Id") is not None
+    assert body["trace_id"] == resp.headers.get("X-Trace-Id")
 
 
 def test_health_degraded_when_ollama_unreachable(monkeypatch):
@@ -70,6 +72,7 @@ def test_ask_returns_answer_and_source_documents(monkeypatch):
     monkeypatch.setattr("app.check_db", lambda db_path: True)
     resp = client.post("/ask", json={"query": "What is RAG?"})
     assert resp.status_code == 200
+    assert resp.headers.get("X-Trace-Id") is not None
     assert resp.json() == {
         "answer": "the answer",
         "source_documents": [{"id": "d1", "document": "doc", "score": 0.9}],
@@ -107,6 +110,9 @@ def test_ask_500_on_unexpected_exception():
     )
     resp = client.post("/ask", json={"query": "q"})
     assert resp.status_code == 500
+    assert resp.headers.get("X-Trace-Id") is not None
+    body = resp.json()
+    assert body["trace_id"] == resp.headers.get("X-Trace-Id")
 
 
 def test_rag_factory_called_once_across_two_asks():
@@ -179,12 +185,15 @@ def test_ask_stream_sanitizes_generic_error() -> None:
     resp = client.post("/ask/stream", json={"query": "hi"})
     assert resp.status_code == 200
     assert "text/event-stream" in resp.headers.get("content-type", "")
-    assert resp.headers.get("X-Trace-Id") is None
+    trace_header = resp.headers.get("X-Trace-Id")
+    assert trace_header is not None
+    assert len(trace_header) == 12
+    int(trace_header, 16)
     payloads = _collect_sse_payloads(resp)
     assert len(payloads) == 1
     err = payloads[0]
     assert err["error"] == "Internal server error"
-    assert "trace_id" not in err
+    assert err["trace_id"] == trace_header
     raw = json.dumps(err) + resp.text
     assert "boom" not in raw
     assert "/etc/passwd" not in raw
@@ -198,13 +207,15 @@ def test_ask_stream_preserves_ollama_connection_error() -> None:
     client = TestClient(create_app(rag_factory=lambda: rag))
     resp = client.post("/ask/stream", json={"query": "hi"})
     assert resp.status_code == 200
+    trace_header = resp.headers.get("X-Trace-Id")
+    assert trace_header is not None
     payloads = _collect_sse_payloads(resp)
     assert len(payloads) == 1
     err = payloads[0]
     assert err["error"] == (
         "ERROR: Could not connect to Ollama. Please check that Ollama is running."
     )
-    assert "trace_id" not in err
+    assert err["trace_id"] == trace_header
 
 
 def test_ask_stream_preserves_ollama_transport_error() -> None:
@@ -214,13 +225,15 @@ def test_ask_stream_preserves_ollama_transport_error() -> None:
     client = TestClient(create_app(rag_factory=lambda: rag))
     resp = client.post("/ask/stream", json={"query": "hi"})
     assert resp.status_code == 200
+    trace_header = resp.headers.get("X-Trace-Id")
+    assert trace_header is not None
     payloads = _collect_sse_payloads(resp)
     assert len(payloads) == 1
     err = payloads[0]
     assert err["error"] == (
         "ERROR: Could not connect to Ollama. Please check that Ollama is running."
     )
-    assert "trace_id" not in err
+    assert err["trace_id"] == trace_header
 
 
 def test_ask_stream_logs_raw_error(caplog) -> None:
@@ -242,7 +255,9 @@ def test_ask_stream_headers_preserved_on_success() -> None:
     resp = client.post("/ask/stream", json={"query": "hi"})
     assert resp.status_code == 200
     assert "text/event-stream" in resp.headers.get("content-type", "")
-    assert resp.headers.get("X-Trace-Id") is None
+    trace_header = resp.headers.get("X-Trace-Id")
+    assert trace_header is not None
+    assert len(trace_header) == 12
     assert resp.headers.get("X-Content-Type-Options") == "nosniff"
     assert resp.headers.get("Cache-Control") == "no-cache"
     assert resp.headers.get("X-Accel-Buffering") == "no"
@@ -250,6 +265,7 @@ def test_ask_stream_headers_preserved_on_success() -> None:
     tokens = [p.get("token") for p in payloads if "token" in p]
     assert "".join(tokens) == "hello world"
     assert payloads[-1].get("done") is True
+    assert payloads[-1].get("trace_id") == trace_header
     assert payloads[-1].get("source_documents") == [
         {"id": "d1", "document": "doc", "score": 0.9}
     ]
@@ -261,7 +277,7 @@ def test_ask_stream_headers_preserved_on_error() -> None:
     resp = client.post("/ask/stream", json={"query": "hi"})
     assert resp.status_code == 200
     assert "text/event-stream" in resp.headers.get("content-type", "")
-    assert resp.headers.get("X-Trace-Id") is None
+    assert resp.headers.get("X-Trace-Id") is not None
     assert resp.headers.get("X-Content-Type-Options") == "nosniff"
     assert resp.headers.get("Cache-Control") == "no-cache"
     assert resp.headers.get("X-Accel-Buffering") == "no"
@@ -280,7 +296,7 @@ def test_ask_stream_503_on_semaphore_timeout() -> None:
         resp = client.post("/ask/stream", json={"query": "hi"})
         assert resp.status_code == 503
         assert resp.json()["detail"] == "Server busy, try again later"
-        assert resp.headers.get("X-Trace-Id") is None
+        assert resp.headers.get("X-Trace-Id") is not None
     finally:
         app_instance.state.semaphore.release()
 
@@ -298,7 +314,7 @@ def test_ask_503_on_semaphore_timeout() -> None:
         resp = client.post("/ask", json={"query": "hi"})
         assert resp.status_code == 503
         assert resp.json()["detail"] == "Server busy, try again later"
-        assert resp.headers.get("X-Trace-Id") is None
+        assert resp.headers.get("X-Trace-Id") is not None
     finally:
         app_instance.state.semaphore.release()
 
@@ -327,7 +343,7 @@ def test_ask_still_returns_answer_after_stream_fix(monkeypatch) -> None:
     resp = client.post("/ask", json={"query": "What is RAG?"})
     assert resp.status_code == 200
     assert resp.json()["answer"] == "the answer"
-    assert resp.headers.get("X-Trace-Id") is None
+    assert resp.headers.get("X-Trace-Id") is not None
 
 
 def test_health_still_never_initializes_pipeline_after_stream_fix(monkeypatch) -> None:
@@ -339,7 +355,7 @@ def test_health_still_never_initializes_pipeline_after_stream_fix(monkeypatch) -
     monkeypatch.setattr("app.check_db", lambda db_path: True)
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.headers.get("X-Trace-Id") is None
+    assert resp.headers.get("X-Trace-Id") is not None
 
 
 def _fake_scale_report_data() -> dict:
@@ -407,7 +423,7 @@ def test_scale_report_returns_json_when_exists(monkeypatch) -> None:
     assert body["results"][0]["p50_ms"] == 12.66
     assert body["results"][0]["p95_ms"] == 31.6
     assert body["overall_slo_pass"] is True
-    assert resp.headers.get("X-Trace-Id") is None
+    assert resp.headers.get("X-Trace-Id") is not None
     assert resp.headers.get("X-Content-Type-Options") == "nosniff"
     assert resp.headers.get("Cache-Control") == "no-cache"
     assert "application/json" in resp.headers.get("content-type", "")
@@ -430,7 +446,7 @@ def test_scale_report_404_when_missing(monkeypatch) -> None:
     body = resp.json()
     assert "Scale report not found" in body["detail"]
     assert "trace_id" not in body
-    assert resp.headers.get("X-Trace-Id") is None
+    assert resp.headers.get("X-Trace-Id") is not None
     assert resp.headers.get("X-Content-Type-Options") == "nosniff"
 
 
@@ -461,7 +477,7 @@ def test_scale_report_invalid_json_returns_500(monkeypatch) -> None:
     )
     resp = client.get("/scale_report")
     assert resp.status_code == 500
-    assert resp.headers.get("X-Trace-Id") is None
+    assert resp.headers.get("X-Trace-Id") is not None
     assert "Invalid scale report" in resp.json()["detail"]
 
 
@@ -514,4 +530,4 @@ def test_scale_report_headers_on_success(monkeypatch) -> None:
     assert resp.status_code == 200
     assert resp.headers.get("Cache-Control") == "no-cache"
     assert resp.headers.get("X-Content-Type-Options") == "nosniff"
-    assert resp.headers.get("X-Trace-Id") is None
+    assert resp.headers.get("X-Trace-Id") is not None
