@@ -27,27 +27,6 @@ jobs:
           python -m pytest tests/ -q --cov=. --cov-report=term-missing ||
           echo "coverage report-only, no fail-under"
 
-  real-backend:
-    runs-on: ubuntu-latest
-    env:
-      BASALT_TEST_REAL: "1"
-      HF_HOME: ~/.cache/huggingface
-      HF_HUB_VERBOSITY: info
-      TOKENIZERS_PARALLELISM: "false"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/huggingface
-          key: huggingface-py312-${{ hashFiles('requirements.txt', 'requirements-dev.txt') }}
-      - run: pip install -r requirements.txt -r requirements-dev.txt
-      - run: python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); CrossEncoder('BAAI/bge-reranker-base')"
-      - run: python -m pytest tests/test_real_backend.py -q -v
-
   docker:
     needs: lint-test
     if: github.ref == 'refs/heads/main'

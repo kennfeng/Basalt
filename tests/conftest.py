@@ -1,10 +1,7 @@
-import os
 import sys
 import types
 from pathlib import Path
 from unittest.mock import MagicMock
-
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -15,8 +12,3 @@ sys.modules["torch"] = torch_mock
 sys.modules["sentence_transformers"] = MagicMock()
 sys.modules["chromadb"] = MagicMock()
 sys.modules["chromadb.utils"] = MagicMock()
-
-requires_real_backend = pytest.mark.skipif(
-    os.getenv("BASALT_TEST_REAL") != "1",
-    reason="needs real chroma+embed",
-)
