@@ -18,6 +18,9 @@ def _parse_env_int(name: str, default: int) -> int:
 
 
 class BasaltReRanker:
+    # score query plus doc pairs precisely after fast retrieval
+    # hold a cross-encoder model with batch size and device choice
+    # cross-encoder = reads query and doc together for relevance
     def __init__(
         self,
         model: Any = None,
@@ -66,6 +69,8 @@ class BasaltReRanker:
         print(f"Model loaded on {self.device}")
 
     def _score_pairs(self, pairs: Sequence[list[str]]) -> tuple[np.ndarray, list[int]]:
+        # score paired inputs and order them best first
+        # predict relevance per pair, return scores plus ranked positions
         scores = self.model.predict(pairs, batch_size=self.batch_size)
         ranked_indices = sorted(
             range(len(scores)), key=lambda i: scores[i], reverse=True
@@ -73,12 +78,16 @@ class BasaltReRanker:
         return scores, ranked_indices
 
     def _validate_top_n(self, top_n: int) -> None:
+        # reject negative result sizes before model work starts
         if top_n < 0:
             raise ValueError(f"top_n must be >= 0, got {top_n}")
 
     def rerank(
         self, query: str, documents: Sequence[str], top_n: int = 3
     ) -> list[dict[str, Any]]:
+        # order plain texts by relevance to the query
+        # pair each doc with query, score, return top docs with scores
+        # top_n capped at 20 to bound prompt size and latency
         if not documents:
             return []
         self._validate_top_n(top_n)
@@ -95,6 +104,9 @@ class BasaltReRanker:
     def rerank_with_ids(
         self, query: str, candidates: Sequence[tuple[str, str]], top_n: int = 3
     ) -> list[dict[str, Any]]:
+        # order id plus text pairs
+        # same scoring as rerank but return id, document, and score
+        # id = stable doc key used for citations and eval matching
         if not candidates:
             return []
         self._validate_top_n(top_n)

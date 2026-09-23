@@ -43,6 +43,8 @@ HUMAN_TEMPLATE = (
 
 
 def _env_int(name: str, default: int, lo: int, hi: int) -> int:
+    # read a bounded int setting with clamping and fallback
+    # return default on missing or invalid, clamp outside lo to hi
     raw = os.getenv(name)
     if raw is None or raw == "":
         return default
@@ -58,6 +60,9 @@ def _env_int(name: str, default: int, lo: int, hi: int) -> int:
 
 
 class LangChainRAG:
+    # run retrieve plus rerank plus grounded answer in one place
+    # hold dense retriever, cross-encoder ranker, llm, and prompt chain
+    # hybrid = bm25 plus vectors fused, chain = prompt plus llm plus parser
     def __init__(
         self,
         retriever: ChromaRetrieverAdapter,
@@ -79,6 +84,8 @@ class LangChainRAG:
 
     @property
     def chain(self) -> Runnable:
+        # build the answer step once and reuse it for every ask
+        # combine system plus human prompt with llm and text parser
         if self._chain is None:
             self._chain = self.prompt | self.llm | StrOutputParser()
         return self._chain
@@ -97,6 +104,8 @@ class LangChainRAG:
         max_tokens: int | None = None,
         base_url: str | None = None,
     ) -> "LangChainRAG":
+        # assemble a ready pipeline from env with explicit overrides first
+        # seed storage, build hybrid search, then attach reranker and llm
         db_path = (
             db_path
             if db_path is not None
@@ -258,6 +267,9 @@ class LangChainRAG:
         return cls(retriever, reranker, llm, hybrid_retriever=hybrid_retriever)
 
     def _prepare(self, query: str) -> dict[str, Any]:
+        # collect ranked sources and trimmed context for one query
+        # try hybrid fusion first, fall back to dense, then rerank and cut
+        # context = joined top docs capped to fit the prompt window
         query = query[:2000]
         candidates: list[tuple[str, str]] = []
         if self.hybrid_retriever is not None:
@@ -278,6 +290,9 @@ class LangChainRAG:
         return {"context": context, "source_documents": ranked_results}
 
     def ask(self, query: str) -> dict[str, Any]:
+        # return a grounded answer with reranked source documents
+        # prepare context, handle no-hit case, then invoke the llm chain
+        # source_documents = id plus text plus score used for citations
         query = query[:2000]
         prepared = self._prepare(query)
         if not prepared["source_documents"]:

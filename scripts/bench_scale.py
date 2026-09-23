@@ -13,6 +13,9 @@ from typing import Any
 
 
 def _get_rss_bytes() -> int:
+    # measure current process memory for scale reporting
+    # try psutil first, fall back to resource, else report zero
+    # rss = resident memory actually held in ram
     try:
         import psutil
 
@@ -27,6 +30,7 @@ def _get_rss_bytes() -> int:
 
 
 def _get_disk_bytes(root: Path) -> int:
+    # sum stored bytes under a folder for scale reporting
     total = 0
     for p in Path(root).rglob("*"):
         if p.is_file():
@@ -40,6 +44,9 @@ def _get_disk_bytes(root: Path) -> int:
 def _measure_retrieval_latencies(
     n: int, retrieve_n: int, reps: int = 20
 ) -> list[float]:
+    # estimate stub latency distribution without touching chroma
+    # sleep briefly per rep and return sorted millisecond samples
+    # stub = file-write mode, not real vector search
     latencies: list[float] = []
     for _ in range(reps):
         t0 = time.perf_counter()
@@ -53,6 +60,9 @@ def _measure_retrieval_latencies(
 def _measure_real_latencies(
     ingestor: Any, retrieve_n: int, reps: int = 20
 ) -> list[float]:
+    # measure real vector query latency for slo checks
+    # run repeated searches and return sorted millisecond samples
+    # slo = latency and size limits that must pass per corpus size
     latencies: list[float] = []
     query = "retrieval ranking hybrid benchmark"
     for _ in range(reps):
@@ -71,6 +81,9 @@ def _measure_real_latencies(
 
 
 def _threshold_for_n(n: int) -> dict[str, float]:
+    # return allowed latency plus memory and disk limits per size
+    # larger corpora get looser p50, p95, rss, and disk budgets
+    # p50 = median ms, p95 = tail ms
     if n <= 10000:
         return {
             "p95": 250.0,
@@ -96,6 +109,8 @@ def _threshold_for_n(n: int) -> dict[str, float]:
 def _evaluate_slo(
     n: int, p50: float, p95: float, rss: int, disk: int
 ) -> tuple[bool, str]:
+    # decide pass or fail against size-based limits with reasons
+    # compare each metric to thresholds
     thr = _threshold_for_n(n)
     reasons: list[str] = []
     ok = True
@@ -116,6 +131,8 @@ def _evaluate_slo(
 
 
 def _thresholds_config() -> dict[str, dict[str, float]]:
+    # publish the named slo table stored inside scale reports
+    # keys cover 10k, 100k, and 1m corpus sizes for review
     return {
         "10k": {
             "p95_ms": 250.0,
@@ -139,6 +156,8 @@ def _thresholds_config() -> dict[str, dict[str, float]]:
 
 
 def _preflight_memory(n: int) -> None:
+    # warn early when free ram looks too low for the target size
+    # compare available memory to the rss limit, warn only
     try:
         import psutil
 
@@ -162,6 +181,8 @@ def bench(
     real: bool = False,
     db_path: Path | str | None = None,
 ) -> dict[str, Any]:
+    # run ingest plus latency checks across corpus sizes to json
+    # use real chroma ingest when asked, else stub file-write timing
     if not corpus.exists():
         raise FileNotFoundError(f"corpus not found: {corpus}")
     all_lines = corpus.read_text(encoding="utf-8").strip().splitlines()
@@ -315,6 +336,8 @@ def bench(
 
 
 def main() -> None:
+    # parse cli flags and write one scale report file
+    # on failure write an error report when possible then exit 2
     parser = argparse.ArgumentParser(description="Benchmark scale: synthetic corpus")
     parser.add_argument("--corpus", type=str, required=True)
     parser.add_argument("--output", type=str, default="eval/scale_report.json")

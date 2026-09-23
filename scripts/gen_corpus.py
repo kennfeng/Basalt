@@ -5,6 +5,8 @@ from pathlib import Path
 
 
 def gen_corpus(n: int, output: Path, seed: int = 42) -> int:
+    # create n fake abstracts for scale tests without network use
+    # seed random choices so repeated runs produce the same file
     if n < 1:
         raise ValueError(f"n must be >= 1, got {n}")
     random.seed(seed)
@@ -65,6 +67,7 @@ def gen_corpus(n: int, output: Path, seed: int = 42) -> int:
 
 
 def main() -> None:
+    # parse cli flags and write one synthetic corpus file
     parser = argparse.ArgumentParser(description="Generate synthetic corpus JSONL")
     parser.add_argument("--n", type=int, default=1000)
     parser.add_argument("--output", type=str, default="data/synth.jsonl")

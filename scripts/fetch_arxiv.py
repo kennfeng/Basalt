@@ -20,6 +20,7 @@ _MAX_ENTRIES = 10000
 
 
 def _parse_arxiv_id(raw_id: str) -> str:
+    # extract the short arxiv id from a full entry url
     raw_id = raw_id.strip()
     if "/abs/" in raw_id:
         tail = raw_id.split("/abs/")[-1]
@@ -28,6 +29,7 @@ def _parse_arxiv_id(raw_id: str) -> str:
 
 
 def _parse_year(published: str) -> int:
+    # pull the 4-digit year from a published timestamp
     m = re.match(r"(\d{4})", published.strip())
     if m:
         return int(m.group(1))
@@ -35,6 +37,9 @@ def _parse_year(published: str) -> int:
 
 
 def _validate_url(url: str) -> None:
+    # block unsafe fetch targets before any network call
+    # allow http or https only, reject local and cloud metadata hosts
+    # ssrf = call internal addresses
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"URL must be http or https: {url}")
@@ -56,6 +61,9 @@ def _validate_url(url: str) -> None:
 
 
 def _parse_feed(xml_text: str) -> list[dict[str, Any]]:
+    # turn an arxiv atom feed into a list of record dicts
+    # enforce size and dtd limits, clean title and abstract spacing
+    # atom = arxiv xml format, dtd = forbidden embedded markup rules
     if len(xml_text.encode("utf-8")) > _MAX_XML_BYTES:
         raise ValueError("XML response too large")
     if "<!DOCTYPE" in xml_text or "<!ENTITY" in xml_text:
@@ -113,6 +121,8 @@ def _parse_feed(xml_text: str) -> list[dict[str, Any]]:
 
 
 def fetch_arxiv(query_url: str, n: int, output: Path) -> int:
+    # download up to n abstracts and store them as jsonl
+    # validate url, fetch feed, trim to n, write one json per line
     if n < 1 or n > _MAX_ENTRIES:
         raise ValueError(f"n must be between 1 and {_MAX_ENTRIES}, got {n}")
     _validate_url(query_url)
@@ -135,6 +145,8 @@ def fetch_arxiv(query_url: str, n: int, output: Path) -> int:
 
 
 def main() -> None:
+    # parse cli flags and fetch one arxiv slice to disk
+    # support full query url or short category shorthand
     parser = argparse.ArgumentParser(description="Fetch arXiv abstracts to JSONL")
     parser.add_argument(
         "--query-url",

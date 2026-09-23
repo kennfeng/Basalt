@@ -18,15 +18,18 @@ from reranker import BasaltReRanker
 
 
 def resolve_safe_path(path: str) -> Path:
+    # turn user input into an absolute resolved path
     candidate = Path(path).expanduser()
     return candidate.resolve()
 
 
 def is_under_path(path: Path, base: Path) -> bool:
+    # check that a path stays inside the allowed eval folder
     return path.is_relative_to(base)
 
 
 def validate_dataset_path(file_path: str, base_dir: Path) -> Path:
+    # accept only an existing eval file inside the eval folder
     dataset_path = resolve_safe_path(str(file_path))
     if not dataset_path.exists() or not dataset_path.is_file():
         raise FileNotFoundError(
@@ -38,6 +41,7 @@ def validate_dataset_path(file_path: str, base_dir: Path) -> Path:
 
 
 def validate_db_path(db_path: str, base_dir: Path) -> Path:
+    # accept only an eval folder path usable as a test database
     resolved = resolve_safe_path(str(db_path))
     if resolved.exists() and not resolved.is_dir():
         raise ValueError(f"Database path exists and is not a directory: {resolved}")
@@ -47,11 +51,15 @@ def validate_db_path(db_path: str, base_dir: Path) -> Path:
 
 
 def load_dataset(file_path: Path) -> dict[str, Any]:
+    # load the frozen retrieval test set of corpus plus queries
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def precision_at_k(retrieved_ids: list[str], relevant_ids: list[str], k: int) -> float:
+    # share of top k results that are marked relevant
+    # hits divided by k, zero when k is 0 or no results
+    # precision = correctness of returned list, k = cutoff size
     if k == 0:
         return 0.0
     top_k = retrieved_ids[:k]
@@ -63,12 +71,18 @@ def precision_at_k(retrieved_ids: list[str], relevant_ids: list[str], k: int) ->
 
 
 def hit_rate_at_k(retrieved_ids: list[str], relevant_ids: list[str], k: int) -> float:
+    # whether at least one relevant doc appears in top k
+    # returns 1.0 on any overlap, else 0.0
+    # hit rate = task success per query, not ranking quality
     top_k = retrieved_ids[:k]
     relevant_set = set(relevant_ids)
     return 1.0 if any(rid in relevant_set for rid in top_k) else 0.0
 
 
 def reciprocal_rank(retrieved_ids: list[str], relevant_ids: list[str]) -> float:
+    # score how high the first relevant doc is ranked
+    # returns 1 over position, zero when nothing relevant appears
+    # mrr = mean of this value, higher means better ranking
     relevant_set = set(relevant_ids)
     for idx, rid in enumerate(retrieved_ids):
         if rid in relevant_set:
@@ -79,6 +93,9 @@ def reciprocal_rank(retrieved_ids: list[str], relevant_ids: list[str]) -> float:
 def run_retrieval_only(
     ingestor: BasaltIngestor, query: str, n_results: int
 ) -> tuple[list[str], float]:
+    # measure baseline vector search without reranking
+    # time one search and return ids plus elapsed milliseconds
+    # baseline = fast first stage alone, before precise second stage
     start = time.perf_counter()
     candidates = ingestor.search_with_ids(query, n_results=n_results)
 
@@ -95,6 +112,8 @@ def run_retrieval_plus_rerank(
     n_results: int,
     top_n: int,
 ) -> tuple[list[str], float]:
+    # measure two-stage search of retrieval plus precise rerank
+    # time search plus cross-encoder ordering, return top ids and ms
     start = time.perf_counter()
     candidates = ingestor.search_with_ids(query, n_results=n_results)
     reranked = ranker.rerank_with_ids(query, candidates, top_n=top_n)
@@ -106,6 +125,8 @@ def run_retrieval_plus_rerank(
 def summarize(
     name: str, per_query_results: list[dict[str, Any]], k: int
 ) -> dict[str, Any]:
+    # average per-query scores into one headline result row
+    # mean hit rate, precision, mrr, and latency for the run table
     if not per_query_results:
         return {
             "name": name,
@@ -130,6 +151,7 @@ def summarize(
 
 
 def print_table(rows: list[dict[str, Any]]) -> None:
+    # show summary rows as an aligned text table on the console
     if not rows:
         return
 
@@ -138,6 +160,8 @@ def print_table(rows: list[dict[str, Any]]) -> None:
 
 
 def main() -> None:
+    # run the frozen retrieval comparison and write result files
+    # seed isolated db, score both stages, print table, export json
     parser = argparse.ArgumentParser(
         description="Evaluate RAG retrieval vs retrieval+re-ranking"
     )

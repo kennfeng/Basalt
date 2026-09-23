@@ -27,8 +27,8 @@ _SUMMARY_COLUMNS = (
 
 
 class GenerationReporter:
-    """Pandas-backed reporter for generation evaluation analysis."""
-
+    # turn raw generation json into tables for review and comparison
+    # hold config plus per-query and summary frames built with pandas
     def __init__(self, results: dict):
         self._results = results
         self._config = results.get("config", {})
@@ -40,10 +40,12 @@ class GenerationReporter:
 
     @classmethod
     def from_dict(cls, results: dict) -> "GenerationReporter":
+        # wrap an in-memory results dict without touching disk
         return cls(results)
 
     @classmethod
     def from_file(cls, path: Path) -> "GenerationReporter":
+        # load a saved results file or fail with a clear path message
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"Results file not found: {path}")
@@ -68,16 +70,21 @@ class GenerationReporter:
         return self._summary_df
 
     def _build_per_query_df(self) -> pd.DataFrame:
+        # build one labeled frame from stored per-query rows
         if not self._per_query:
             return pd.DataFrame(columns=list(_PER_QUERY_COLUMNS))
         return pd.DataFrame(self._per_query)
 
     def _build_summary_df(self) -> pd.DataFrame:
+        # normalize the summary dict into a one-row frame
         if not self._summary_raw:
             return pd.DataFrame(columns=list(_SUMMARY_COLUMNS))
         return pd.DataFrame([self._summary_raw])
 
     def worst_queries(self, metric: str = "faithfulness", n: int = 5) -> pd.DataFrame:
+        # surface lowest scoring answers for debugging
+        # sort ascending and return first n rows, nulls last
+        # faithfulness = supported by context, low means hallucination risk
         df = self._per_query_df.copy()
         if df.empty:
             return df

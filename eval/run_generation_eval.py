@@ -17,6 +17,9 @@ from rag_pipeline import LangChainRAG
 
 
 def validate_corpus_db(db_path: str, data: dict[str, Any]) -> None:
+    # stop generation eval when the db misses eval corpus docs
+    # compare expected ids to stored ids and list first missing one
+    # eval corpus = fixed test docs, not the demo sample docs
     expected_ids = [doc["id"] for doc in data["corpus"]]
     ingestor = BasaltIngestor(db_path=db_path)
     found = set(ingestor.collection.get(ids=expected_ids)["ids"])
@@ -33,6 +36,8 @@ def validate_corpus_db(db_path: str, data: dict[str, Any]) -> None:
 
 
 def main() -> None:
+    # run generation scoring and write summary plus per-query rows
+    # build pipeline and judge, score all queries, save json report
     parser = argparse.ArgumentParser(
         description="Evaluate RAG generation faithfulness and relevance"
     )

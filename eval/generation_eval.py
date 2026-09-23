@@ -21,6 +21,7 @@ JUDGE_HUMAN_TEMPLATE = (
 
 
 def _extract_json_block(text: str) -> dict | None:
+    # pull the first balanced json object from free-form model text
     start = text.find("{")
     if start == -1:
         return None
@@ -52,6 +53,7 @@ def _extract_json_block(text: str) -> dict | None:
 
 
 def parse_judge_response(text: str) -> dict | None:
+    # validate judge output into faithfulness plus relevance scores
     trimmed = text.strip()
     try:
         data = json.loads(trimmed)
@@ -80,10 +82,14 @@ def parse_judge_response(text: str) -> dict | None:
 
 
 def build_context(source_documents: list[dict[str, Any]]) -> str:
+    # join cited docs into one prompt context block
+    # separate with blank lines to preserve doc boundaries
     return "\n\n".join(doc["document"] for doc in source_documents)
 
 
 def summarize_generation(per_query: list[dict[str, Any]]) -> dict[str, Any]:
+    # average judge scores and latencies while counting failures
+    # skip judge errors for means but report their count separately
     valid = [row for row in per_query if not row["judge_error"]]
     if valid:
         avg_faithfulness = float(sum(row["faithfulness"] for row in valid) / len(valid))
@@ -115,6 +121,9 @@ def summarize_generation(per_query: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 class LLMJudge:
+    # score answers for support and relevance with a second model
+    # hold prompt plus chain that asks for strict json scores
+    # judge = llm reviewer
     def __init__(self, llm: Runnable) -> None:
         self.llm = llm
         self.prompt = ChatPromptTemplate.from_messages(
@@ -127,6 +136,8 @@ class LLMJudge:
 
     @property
     def chain(self) -> Runnable:
+        # build the judge prompt plus model plus text parser once
+        # reuse for every query to avoid rebuilding the chain
         if self._chain is None:
             self._chain = (
                 self.prompt
@@ -136,6 +147,8 @@ class LLMJudge:
         return self._chain
 
     def judge(self, query: str, answer: str, context: str) -> dict[str, Any]:
+        # score one answer against its sources with safe error shape
+        # invoke chain, parse json, mark judge_error when unparsable
         response = self.chain.invoke(
             {"query": query, "answer": answer, "context": context}
         )
@@ -161,6 +174,8 @@ def run_generation_eval(
     dataset: dict[str, Any],
     config: dict[str, Any],
 ) -> dict[str, Any]:
+    # score every dataset answer for faithfulness and relevance
+    # ask pipeline, build context, judge, track both latencies per row
     rows: list[dict[str, Any]] = []
     for item in dataset["queries"]:
         query = item["query"]

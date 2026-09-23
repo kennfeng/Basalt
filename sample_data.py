@@ -1,3 +1,5 @@
+# small fixed corpus so first run works without downloads
+# each entry is an id plus short text used for seeding and tests
 SAMPLE_DOCUMENTS: list[tuple[str, str]] = [
     (
         "doc_pytorch",

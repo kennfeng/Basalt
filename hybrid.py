@@ -14,9 +14,12 @@ from ingest import BasaltIngestor
 
 
 def tokenize(text: str) -> list[str]:
+    # split text into searchable word tokens for sparse matching
     return re.findall(r"\w+", text.lower())
 
 
+# merge meaning-match and word-match into one better ranking
+# add weight * 1/(k+rank) per appearance
 def rrf_fuse(
     dense_ids: list[str],
     sparse_ids: list[str],
@@ -34,6 +37,9 @@ def rrf_fuse(
 
 
 class BM25Index:
+    # keep exact-word search ready without re-reading the corpus
+    # hold ids, texts, and token lists plus a bm25 scorer
+    # bm25 = ranks by rare-word overlap
     def __init__(
         self,
         corpus_ids: list[str],
@@ -54,6 +60,8 @@ class BM25Index:
         self.bm25 = BM25Okapi(tokenized_corpus)
 
     def search(self, query: str, n_results: int = 50) -> list[tuple[str, str]]:
+        # find docs with the same words as the query
+        # score token overlap, drop zero scores, keep best n_results
         if not query.strip():
             return []
         tokenized_query = tokenize(query)
@@ -68,6 +76,9 @@ class BM25Index:
         return out
 
     def save(self, path: Path) -> None:
+        # persist the sparse index next to the vector store
+        # write to tmp file first, gate large files, then replace target
+        # sharded = split across files, tantivy = alternate sparse backend
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
@@ -117,6 +128,8 @@ class BM25Index:
 
     @classmethod
     def load(cls, path: Path) -> "BM25Index":
+        # rebuild the sparse index from a saved json file
+        # read ids, texts, and tokens then construct a new index
         with Path(path).open("r", encoding="utf-8") as f:
             data = json.load(f)
         return cls(
@@ -127,6 +140,9 @@ class BM25Index:
 
     @classmethod
     def build_from_jsonl(cls, jsonl_path: Path) -> "BM25Index":
+        # build a fresh sparse index from a jsonl corpus file
+        # read each line id plus abstract or text, skip incomplete rows
+        # jsonl = one json doc per line, abstract = paper summary
         ids: list[str] = []
         texts: list[str] = []
         with Path(jsonl_path).open(encoding="utf-8") as f:
@@ -151,7 +167,8 @@ class BM25Index:
 
 
 def build_from_collection(collection: Any, limit: int = 10000) -> BM25Index | None:
-    """Build BM25 from collection via paginated get streaming."""
+    # rebuild sparse search from stored vectors without a corpus file
+    # page through collection ids and docs, then build a new index
     corpus_ids: list[str] = []
     corpus_texts: list[str] = []
     offset = 0
@@ -196,7 +213,7 @@ def load_or_build_bm25(
     db_count: int | None = None,
     collection: Any | None = None,
 ) -> BM25Index | None:
-    """Load cached BM25 or build with large-collection gate."""
+    # return a usable sparse index with the cheapest safe source
     if pickle_path is not None and json_path is None:
         warnings.warn(
             "pickle_path deprecated use json_path",
@@ -247,6 +264,8 @@ def load_or_build_bm25(
 
 
 class HybridRetriever:
+    # combine vector search and word search for stronger candidates
+    # dense = vector meaning search, sparse = bm25 word search
     def __init__(
         self,
         ingestor: BasaltIngestor,
@@ -264,6 +283,8 @@ class HybridRetriever:
         self.top_n = top_n
 
     def retrieve(self, query: str) -> list[tuple[str, str]]:
+        # get the fused top list used before reranking
+        # run dense and sparse, fuse ids, return pairs in fused order
         dense_results = self.ingestor.search_with_ids(query, n_results=self.dense_n)
         dense_ids = [doc_id for doc_id, _ in dense_results]
         dense_map = dict(dense_results)
@@ -287,6 +308,7 @@ class HybridRetriever:
     def hybrid_search(
         self, query: str, n_results: int | None = None
     ) -> list[tuple[str, str]]:
+        # same fusion as retrieve with a per-call result size
         top = n_results if n_results is not None else self.top_n
         dense_n = max(self.dense_n, top)
         sparse_n = max(self.sparse_n, top)

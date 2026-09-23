@@ -6,6 +6,7 @@ from rag_pipeline import LangChainRAG
 
 
 class BasaltRAG:
+    # offer one simple ask entry point over the full pipeline
     def __init__(
         self,
         pipeline: LangChainRAG | None = None,
@@ -31,6 +32,7 @@ class BasaltRAG:
         )
 
     def ask(self, query: str) -> dict[str, Any]:
+        # answer one question with citations or a safe connection error
         try:
             return self.pipeline.ask(query[:2000])
         except (ConnectionError, httpx.TransportError):

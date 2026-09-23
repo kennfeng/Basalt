@@ -7,6 +7,9 @@ from ingest import BasaltIngestor
 
 
 def _write_checkpoint_atomic(checkpoint: Path, offset: int) -> None:
+    # save resume position so a retry skips finished bytes
+    # write tmp plus fsync then replace for crash-safe updates
+    # offset = byte position in source file, fsync = force to disk
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
     tmp = checkpoint.with_suffix(checkpoint.suffix + ".tmp")
     tmp.write_text(str(offset), encoding="utf-8")
@@ -34,6 +37,8 @@ def bulk_ingest(
     resume: bool = False,
     db_path: str | None = None,
 ) -> int:
+    # load a large jsonl file into the vector store resumably
+    # stream lines from offset, batch upserts, update checkpoint per batch
     source = Path(source)
     if checkpoint is not None:
         checkpoint = Path(checkpoint)
@@ -111,6 +116,8 @@ def bulk_ingest(
 
 
 def main() -> None:
+    # parse cli flags and run one bulk load with progress output
+    # default checkpoint sits next to the source file for resume
     parser = argparse.ArgumentParser(
         description="Bulk ingest JSONL corpus with checkpoint"
     )

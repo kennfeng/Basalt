@@ -17,18 +17,25 @@ logger = logging.getLogger(__name__)
 
 
 def _new_trace_id() -> str:
+    # create a short id to link logs with one client request
     return secrets.token_hex(6)
 
 
 class AskRequest(BaseModel):
+    # validate one user question before pipeline work starts
     query: str = Field(min_length=1, max_length=2000)
 
 
 def check_db(db_path: str) -> bool:
+    # report whether local vector storage looks present
+    # true means the folder exists, not that it holds docs
     return Path(db_path).is_dir()
 
 
 def check_ollama(base_url: str | None) -> bool:
+    # report whether the llm server answers a quick status call
+    # get tags with short timeout
+    # tags = model list endpoint
     url = (base_url or "http://localhost:11434").rstrip("/") + "/api/tags"
     try:
         response = httpx.get(url, timeout=2.0)
@@ -38,6 +45,7 @@ def check_ollama(base_url: str | None) -> bool:
 
 
 def _parse_int_env(name: str, default: int, lo: int, hi: int) -> int:
+    # read a bounded int setting with clamping and fallback
     raw = os.getenv(name)
     if raw is None or raw == "":
         return default
@@ -53,6 +61,7 @@ def _parse_int_env(name: str, default: int, lo: int, hi: int) -> int:
 
 
 def _parse_float_env(name: str, default: float, lo: float, hi: float) -> float:
+    # read a bounded float setting with clamping and fallback
     raw = os.getenv(name)
     if raw is None or raw == "":
         return default
@@ -70,6 +79,9 @@ def _parse_float_env(name: str, default: float, lo: float, hi: float) -> float:
 def verify_api_key(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> None:
+    # guard write paths when a shared secret is configured
+    # skip checks if unset
+    # 401 = wrong or missing key, unset means local open mode
     expected = os.getenv("BASALT_API_KEY")
     if not expected:
         return
@@ -78,6 +90,7 @@ def verify_api_key(
 
 
 def get_rag(request: Request) -> BasaltRAG:
+    # return one shared pipeline across requests with safe startup
     state = request.app.state
     if getattr(state, "rag", None) is None:
         with state.lock:
@@ -90,6 +103,7 @@ def get_rag(request: Request) -> BasaltRAG:
 
 
 def create_app(rag_factory: Any = None) -> FastAPI:
+    # build the http service with health, ask, stream, and report routes
     app = FastAPI()
     app.state.rag = None
     app.state.rag_factory = rag_factory
@@ -99,6 +113,8 @@ def create_app(rag_factory: Any = None) -> FastAPI:
 
     @app.get("/health")
     def health() -> JSONResponse:
+        # show readiness without starting the heavy pipeline
+        # check db folder, llm reachability, and config then 200 or 503
         trace_id = _new_trace_id()
         db_path = os.environ.get("BASALT_DB_PATH", "./basalt_db")
         base_url = os.environ.get("BASALT_BASE_URL")
@@ -190,6 +206,7 @@ def create_app(rag_factory: Any = None) -> FastAPI:
         request: Request,
         _auth: None = Depends(verify_api_key),
     ) -> Any:
+        # answer one question as json with citations
         trace_id = _new_trace_id()
         sem: Semaphore = request.app.state.semaphore
         timeout: float = request.app.state.ask_timeout
@@ -235,6 +252,8 @@ def create_app(rag_factory: Any = None) -> FastAPI:
         request: Request,
         _auth: None = Depends(verify_api_key),
     ) -> Any:
+        # stream answer tokens plus a final source list over sse
+        # sse = text event stream
         trace_id = _new_trace_id()
         sem: Semaphore = request.app.state.semaphore
         timeout: float = request.app.state.ask_timeout
@@ -375,6 +394,8 @@ def create_app(rag_factory: Any = None) -> FastAPI:
 
     @app.get("/scale_report")
     def scale_report() -> JSONResponse:
+        # serve the saved scale benchmark or a clear missing message
+        # scale report = ingest speed plus latency and memory numbers
         trace_id = _new_trace_id()
         report_path = Path("eval/scale_report.json")
         if not report_path.exists():

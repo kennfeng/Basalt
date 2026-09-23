@@ -12,7 +12,8 @@ _METRIC_COLUMNS = (
 
 
 class EvalReporter:
-    """Pandas-backed evaluation reporter for RAG retrieval analysis."""
+    # turn raw eval json into tables for review and comparison
+    # hold config plus per-query and summary frames built with pandas
 
     def __init__(self, results: dict):
         self._results = results
@@ -25,10 +26,12 @@ class EvalReporter:
 
     @classmethod
     def from_dict(cls, results: dict) -> "EvalReporter":
+        # wrap an in-memory results dict without touching disk
         return cls(results)
 
     @classmethod
     def from_file(cls, path: Path) -> "EvalReporter":
+        # load a saved results file or fail
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"Results file not found: {path}")
@@ -49,6 +52,7 @@ class EvalReporter:
         return self._summary_df
 
     def _build_per_query_df(self) -> pd.DataFrame:
+        # stack each strategy rows into one labeled frame
         frames = []
         for strategy, rows in self._per_query.items():
             if not rows:
@@ -70,6 +74,8 @@ class EvalReporter:
         return pd.concat(frames, ignore_index=True)
 
     def _build_summary_df(self) -> pd.DataFrame:
+        # normalize summary dicts into mean metric columns
+        # map avg names to mean names and keep run name plus k
         if not self._summary_raw:
             return pd.DataFrame()
 
@@ -89,6 +95,9 @@ class EvalReporter:
         return pd.DataFrame(records)
 
     def latency_percentiles(self, strategy: str, quantiles=None) -> pd.DataFrame:
+        # show tail behavior for one strategy across chosen quantiles
+        # filter rows then compute latency distribution points
+        # quantile = share of runs below a latency value
         if quantiles is None:
             quantiles = [0.0, 0.25, 0.5, 0.75, 0.9]
 
@@ -105,12 +114,17 @@ class EvalReporter:
     def worst_queries(
         self, strategy: str, metric: str = "mrr", n: int = 5
     ) -> pd.DataFrame:
+        # surface the lowest scoring queries for debugging
+        # sort ascending by metric and return the first n rows
+        # mrr = rank quality, low means relevant doc was buried
         df = self._per_query_df
         subset = df[df["strategy"] == strategy].copy()
         sorted_df = subset.sort_values(by=metric, ascending=True)
         return sorted_df.head(n)
 
     def difficulty_breakdown(self, strategy: str) -> pd.DataFrame:
+        # count queries in low, medium, and high precision buckets
+        # bin precision scores then tally rows per bucket
         df = self._per_query_df
         subset = df[df["strategy"] == strategy].copy()
 
@@ -127,6 +141,9 @@ class EvalReporter:
         return grouped
 
     def compare(self, other: "EvalReporter") -> pd.DataFrame:
+        # show metric deltas between two runs for regression checks
+        # join on name and k, delta is other minus baseline
+        # positive delta means the compared run scored higher
         left = self.summary_df.copy()
         right = other.summary_df.copy()
 

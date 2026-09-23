@@ -13,6 +13,7 @@ def _chunk_text(
     chunk_size: int = 512,
     chunk_overlap: int = 64,
 ) -> list[str]:
+    # split long text into overlapping word windows for storage
     if chunk_size < 1:
         raise ValueError(f"chunk_size must be >= 1, got {chunk_size}")
     if chunk_overlap >= chunk_size:
@@ -31,6 +32,8 @@ def _chunk_text(
 
 
 def _parse_env_int(name: str, default: int | None = None) -> int | None:
+    # read an int setting with a safe fallback value
+    # return default on missing, blank, or invalid input
     val = os.getenv(name)
     if val is None or val == "":
         return default
@@ -41,6 +44,8 @@ def _parse_env_int(name: str, default: int | None = None) -> int | None:
 
 
 def _create_client(db_path: str) -> Any:
+    # open the vector store locally or over the network
+    # use shared server when host is set, else local persistent path
     host = os.getenv("BASALT_CHROMA_HOST")
     if host:
         port = _parse_env_int("BASALT_CHROMA_PORT", 8000) or 8000
@@ -49,11 +54,10 @@ def _create_client(db_path: str) -> Any:
 
 
 def _hnsw_metadata() -> dict[str, Any]:
-    """Creation time only HNSW config for fresh collection.
-
-    Changing BASALT_HNSW_M or construction or search ef needs
-    fresh tmp DB or new collection_name, or rm -rf DB path.
-    """
+    # describe the vector index shape at collection creation time
+    # changing m or ef values needs a fresh collection or wiped path
+    # hnsw = graph search index, m = links per node, ef = search depth
+    """creation time only hnsw config for fresh collection"""
     metadata: dict[str, Any] = {"hnsw:space": "cosine"}
     m = _parse_env_int("BASALT_HNSW_M")
     if m is not None:
@@ -68,6 +72,9 @@ def _hnsw_metadata() -> dict[str, Any]:
 
 
 class BasaltIngestor:
+    # own local vector storage plus the embedding setup
+    # hold db path, model name, client, and document collection
+    # embedding = text turned into a meaning vector for search
     def __init__(
         self,
         db_path: str = "./basalt_db",
@@ -118,6 +125,9 @@ class BasaltIngestor:
         chunk_overlap: int = 64,
         batch_size: int | None = None,
     ) -> None:
+        # store texts as searchable vectors with stable ids
+        # chunk when asked, then upsert in batches for restarts and speed
+        # upsert = insert or replace by id
         if chunk_size is not None and chunk_size > 0:
             if chunk_overlap >= chunk_size:
                 raise ValueError(
@@ -195,6 +205,8 @@ class BasaltIngestor:
         n_results: int = 10,
         where: dict[str, Any] | None = None,
     ) -> list[str]:
+        # return the closest stored texts for a query
+        # ask the collection for n_results matches in ranked order
         results = self.collection.query(
             query_texts=[query],
             n_results=n_results,
@@ -208,6 +220,8 @@ class BasaltIngestor:
         n_results: int = 10,
         where: dict[str, Any] | None = None,
     ) -> list[tuple[str, str]]:
+        # return matching ids with texts to keep citations stable
+        # same vector query as search but preserve id and document pairs
         results = self.collection.query(
             query_texts=[query],
             n_results=n_results,
@@ -222,6 +236,8 @@ def ensure_seeded(
     ids: list[str] | None = None,
     ingestor: BasaltIngestor | None = None,
 ) -> bool:
+    # guarantee a demo corpus without wiping user data
+    # seed only when empty, allow ids wipe only with explicit permission
     auto_seed = os.getenv("BASALT_AUTO_SEED", "true").lower()
     if auto_seed in ("false", "0", "no", "off"):
         return False
