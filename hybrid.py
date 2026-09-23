@@ -3,6 +3,7 @@ import os
 import re
 import warnings
 from pathlib import Path
+from typing import Any
 
 try:
     from rank_bm25 import BM25Okapi
@@ -149,13 +150,53 @@ class BM25Index:
         return cls(corpus_ids=ids, corpus_texts=texts)
 
 
+def build_from_collection(collection: Any, limit: int = 10000) -> BM25Index | None:
+    """Build BM25 from collection via paginated get streaming."""
+    corpus_ids: list[str] = []
+    corpus_texts: list[str] = []
+    offset = 0
+    while True:
+        try:
+            batch = collection.get(
+                limit=limit, offset=offset, include=["documents", "ids"]
+            )
+        except TypeError:
+            try:
+                fallback = collection.get(include=["documents", "ids"])
+                f_ids = fallback.get("ids", [])
+                f_docs = fallback.get("documents", [])
+                if f_ids and f_docs:
+                    corpus_ids = list(f_ids)
+                    corpus_texts = list(f_docs)
+            except Exception:  # noqa: BLE001, S110
+                pass
+            break
+        except Exception:  # noqa: BLE001, S110
+            break
+        ids = batch.get("ids", [])
+        docs = batch.get("documents", [])
+        if not ids or not docs:
+            break
+        corpus_ids.extend(list(ids))
+        corpus_texts.extend(list(docs))
+        if len(ids) < limit:
+            break
+        offset += limit
+    if corpus_ids and corpus_texts:
+        return BM25Index(corpus_ids=corpus_ids, corpus_texts=corpus_texts)
+    return None
+
+
 def load_or_build_bm25(
     json_path: Path | None = None,
     pickle_path: Path | None = None,
     jsonl_path: Path | None = None,
     corpus_ids: list[str] | None = None,
     corpus_texts: list[str] | None = None,
+    db_count: int | None = None,
+    collection: Any | None = None,
 ) -> BM25Index | None:
+    """Load cached BM25 or build with large-collection gate."""
     if pickle_path is not None and json_path is None:
         warnings.warn(
             "pickle_path deprecated use json_path",
@@ -170,6 +211,24 @@ def load_or_build_bm25(
             pass
     if corpus_ids is not None and corpus_texts is not None:
         idx = BM25Index(corpus_ids=corpus_ids, corpus_texts=corpus_texts)
+        if json_path is not None:
+            try:
+                idx.save(Path(json_path))
+            except Exception:  # noqa: BLE001, S110
+                pass
+        return idx
+    effective_count: int | None = db_count
+    if effective_count is None and collection is not None:
+        try:
+            effective_count = int(collection.count())
+        except Exception:  # noqa: BLE001, S110
+            effective_count = None
+    if effective_count is not None and effective_count > 1000:
+        if collection is None:
+            return None
+        idx = build_from_collection(collection, limit=10000)
+        if idx is None:
+            return None
         if json_path is not None:
             try:
                 idx.save(Path(json_path))
