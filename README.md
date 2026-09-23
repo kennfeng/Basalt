@@ -66,6 +66,19 @@ curl -N -X POST http://localhost:8001/ask/stream -H "Content-Type: application/j
 open http://localhost:8001/ui/
 ```
 
+### HTTP API — Local venv alternate (`:8000`, no Docker)
+
+```bash
+source .venv/bin/activate && ollama serve &
+.venv/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8000
+curl http://localhost:8000/health
+curl -X POST http://localhost:8000/ask -H "Content-Type: application/json" \
+  -d '{"query":"What is cross-encoder re-ranking?"}'
+curl -N -X POST http://localhost:8000/ask/stream -H "Content-Type: application/json" \
+  -d '{"query":"What is cross-encoder re-ranking?"}'
+open http://localhost:8000/ui/
+```
+
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health` | Status, `db_count`, readiness — 200 or 503. |
