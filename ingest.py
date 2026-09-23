@@ -49,6 +49,11 @@ def _create_client(db_path: str) -> Any:
 
 
 def _hnsw_metadata() -> dict[str, Any]:
+    """Creation time only HNSW config for fresh collection.
+
+    Changing BASALT_HNSW_M or construction or search ef needs
+    fresh tmp DB or new collection_name, or rm -rf DB path.
+    """
     metadata: dict[str, Any] = {"hnsw:space": "cosine"}
     m = _parse_env_int("BASALT_HNSW_M")
     if m is not None:
