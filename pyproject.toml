@@ -4,6 +4,23 @@ version = "0.1.0"
 description = "Basalt: hybrid BM25+dense retrieval, cross-encoder re-ranking, Ollama/Gemini generation"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+dependencies = [
+    "chromadb==1.5.9",
+    "defusedxml==0.7.1",
+    "fastapi==0.141.1",
+    "httpx==0.28.1",
+    "huggingface-hub>=1.3.0,<2.0.0",
+    "langchain-core==1.6.3",
+    "langchain-ollama==1.1.0",
+    "langchain-openai==1.6.2",
+    "pandas==3.0.6",
+    "rank-bm25==0.2.2",
+    "sentence-transformers==6.1.0",
+    "tokenizers>=0.19",
+    "torch==2.14.0",
+    "transformers>=5.0.0,<6.0.0",
+    "uvicorn==0.53.0",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -35,3 +52,14 @@ omit = ["tests/*", "eval/*", ".venv/*"]
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.uv]
+constraint-dependencies = ["certifi>=2026.10.19"]
+package = false
+
+[dependency-groups]
+dev = [
+    "numpy==2.4.6",
+    "pytest==9.1.1",
+    "ruff>=0.16.0",
+]
